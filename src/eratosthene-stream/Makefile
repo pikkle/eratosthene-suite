@@ -8,6 +8,7 @@ MAKE_DLIB:=lib
 MAKE_DSRC:=src
 MAKE_DOBJ:=obj
 MAKE_DBUILD:=build
+MAKE_SHADERS:=shaders
 
 MAKE_OSYS:=$(shell uname -s)
 
@@ -44,3 +45,4 @@ make-directories:
 clean:
 	rm -f $(MAKE_DBIN)/*
 	rm -rf $(MAKE_DBUILD)/*
+	rm -f $(MAKE_SHADERS)/*.spv
