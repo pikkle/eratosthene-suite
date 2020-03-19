@@ -11,29 +11,46 @@ include_directories(include)
 # pre compile shaders
 set(GLSL_COMPILER glslc)
 
-set(KERNELS
-    ${CMAKE_SOURCE_DIR}/shaders/shader.vert
-    ${CMAKE_SOURCE_DIR}/shaders/shader.frag
-    )
+set(RESOURCES
+        ${CMAKE_SOURCE_DIR}/shaders/shader.vert
+        ${CMAKE_SOURCE_DIR}/shaders/shader.frag
+        )
 
-set(COMPILED_KERNELS
+set(COMPILED_RESOURCES
         ${CMAKE_SOURCE_DIR}/shaders/shader.vert.spv
         ${CMAKE_SOURCE_DIR}/shaders/shader.frag.spv
         )
 
-foreach(KERNEL ${KERNELS})
-    add_custom_command(OUTPUT ${KERNEL}.spv
-            COMMAND ${GLSL_COMPILER} ${KERNEL} -o ${KERNEL}.spv
+set(HEADERS
+        src/engine.h
+        src/models.h
+        src/utils.h
+        src/hardware.h
+        )
 
-            DEPENDS ${KERNEL}
-            COMMENT "Rebuilding ${KERNEL}.spv" )
-    message(STATUS "Generating build commands for ${KERNEL}.spv")
-endforeach()
+set(SOURCES
+        src/main.cpp
+        src/engine.cpp
+        src/models.cpp
+        src/utils.cpp
+        src/hardware.cpp
+        )
+
+
+foreach (RESOURCE ${RESOURCES})
+    add_custom_command(OUTPUT ${RESOURCE}.spv
+            COMMAND ${GLSL_COMPILER} ${RESOURCE} -o ${RESOURCE}.spv
+            DEPENDS ${RESOURCE}
+            COMMENT "Rebuilding ${RESOURCE}.spv")
+    message(STATUS "Generating build commands for ${RESOURCE}.spv")
+endforeach ()
 
 add_executable(
         eratosthene-stream
-        src/eratosthene-stream.cpp
-        ${KERNELS} ${COMPILED_KERNELS}
+        ${HEADERS}
+        ${SOURCES}
+        ${RESOURCES}
+        ${COMPILED_RESOURCES}
 )
 
 target_link_libraries(eratosthene-stream glfw ${GLFW_LIBRARIES} Vulkan::Vulkan)
