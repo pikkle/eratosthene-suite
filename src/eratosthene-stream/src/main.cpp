@@ -29,11 +29,24 @@ const std::vector<Vertex> vertices = {
         {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
         {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
         {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+
+        {{-0.6f, -0.6f, -0.6f}, {0.0f, 0.0f, 1.0f}},
+        {{0.6f, 0.6f, 0.6f}, {0.0f, 1.0f, 0.0f}},
+
+        {{0.7f, 0.7f, 0.7f}, {1.0f, 1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> triangles = {
         0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4
+        4, 5, 6, 6, 7, 4,
+};
+
+const std::vector<uint16_t> lines = {
+        8, 9,
+};
+
+const std::vector<uint16_t> points = {
+        10,
 };
 
 class HelloTriangleApplication {
@@ -64,9 +77,17 @@ private:
 
         engine = new Engine(window);
         engine->feedVertices(vertices);
+        if (triangles.size() % 3 != 0) {
+            throw std::runtime_error("Invalid format of triangle indices list");
+        }
         engine->drawTriangles(triangles);
-//        engine->drawPoints();
-//        engine->drawLines();
+
+        if (lines.size() % 2 != 0) {
+            throw std::runtime_error("Invalid format of triangle indices list");
+        }
+        engine->drawLines(lines);
+        engine->drawPoints(points);
+
         engine->setSceneView(view);
         engine->prepareRendering();
 

@@ -73,7 +73,9 @@ private:
     VkRenderPass renderPass;
     VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
+    VkPipeline trianglesGraphicsPipeline;
+    VkPipeline linesGraphicsPipeline;
+    VkPipeline pointsGraphicsPipeline;
 
     VkCommandPool commandPool;
 
@@ -85,8 +87,12 @@ private:
 
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
+    VkBuffer trianglesIndexBuffer;
+    VkDeviceMemory trianglesIndexBufferMemory;
+    VkBuffer linesIndexBuffer;
+    VkDeviceMemory linesIndexBufferMemory;
+    VkBuffer pointsIndexBuffer;
+    VkDeviceMemory pointsIndexBufferMemory;
 
     // 3D depth buffering
     VkImage depthImage;

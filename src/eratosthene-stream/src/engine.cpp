@@ -71,8 +71,12 @@ void Engine::cleanup() {
 
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-    vkDestroyBuffer(device, indexBuffer, nullptr);
-    vkFreeMemory(device, indexBufferMemory, nullptr);
+    vkDestroyBuffer(device, trianglesIndexBuffer, nullptr);
+    vkFreeMemory(device, trianglesIndexBufferMemory, nullptr);
+    vkDestroyBuffer(device, linesIndexBuffer, nullptr);
+    vkFreeMemory(device, linesIndexBufferMemory, nullptr);
+    vkDestroyBuffer(device, pointsIndexBuffer, nullptr);
+    vkFreeMemory(device, pointsIndexBufferMemory, nullptr);
 
     vkDestroyBuffer(device, vertexBuffer, nullptr);
     vkFreeMemory(device, vertexBufferMemory, nullptr);
@@ -175,7 +179,10 @@ void Engine::createLogicalDevice() {
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
-    VkPhysicalDeviceFeatures deviceFeatures = {};
+    VkPhysicalDeviceFeatures deviceFeatures = {
+            largePoints: VK_TRUE,
+//            wideLines: VK_TRUE,
+    };
 
     VkDeviceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -212,7 +219,7 @@ void Engine::cleanupSwapChain() {
 
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
-    vkDestroyPipeline(device, graphicsPipeline, nullptr);
+    vkDestroyPipeline(device, trianglesGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
 
@@ -486,10 +493,16 @@ void Engine::createGraphicsPipeline() {
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
-    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
+    VkPipelineInputAssemblyStateCreateInfo triangleInputAssembly = {};
+    triangleInputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    triangleInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    triangleInputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineInputAssemblyStateCreateInfo pointsInputAssembly = triangleInputAssembly;
+    pointsInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+
+    VkPipelineInputAssemblyStateCreateInfo linesInputAssembly = triangleInputAssembly;
+    linesInputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
 
     VkViewport viewport = {};
     viewport.x = 0.0f;
@@ -561,24 +574,36 @@ void Engine::createGraphicsPipeline() {
         throw std::runtime_error("failed to create pipeline layout!");
     }
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 0;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    VkGraphicsPipelineCreateInfo trianglePipelineInfo = {};
+    trianglePipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    trianglePipelineInfo.stageCount = 2;
+    trianglePipelineInfo.pStages = shaderStages;
+    trianglePipelineInfo.pVertexInputState = &vertexInputInfo;
+    trianglePipelineInfo.pInputAssemblyState = &triangleInputAssembly;
+    trianglePipelineInfo.pViewportState = &viewportState;
+    trianglePipelineInfo.pRasterizationState = &rasterizer;
+    trianglePipelineInfo.pMultisampleState = &multisampling;
+    trianglePipelineInfo.pColorBlendState = &colorBlending;
+    trianglePipelineInfo.pDepthStencilState = &depthStencil;
+    trianglePipelineInfo.layout = pipelineLayout;
+    trianglePipelineInfo.renderPass = renderPass;
+    trianglePipelineInfo.subpass = 0;
+    trianglePipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create graphics pipeline!");
+    VkGraphicsPipelineCreateInfo pointsPipelineInfo = trianglePipelineInfo;
+    pointsPipelineInfo.pInputAssemblyState = &pointsInputAssembly;
+
+    VkGraphicsPipelineCreateInfo linesPipelineInfo = trianglePipelineInfo;
+    linesPipelineInfo.pInputAssemblyState = &linesInputAssembly;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &trianglePipelineInfo, nullptr, &trianglesGraphicsPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create triangles graphics pipeline!");
+    }
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &linesPipelineInfo, nullptr, &linesGraphicsPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create lines graphics pipeline!");
+    }
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pointsPipelineInfo, nullptr, &pointsGraphicsPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create points graphics pipeline!");
     }
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
@@ -642,23 +667,43 @@ void Engine::createVertexBuffer() {
 }
 
 void Engine::createIndexBuffer() {
-    VkDeviceSize bufferSize = sizeof(triangles[0]) * triangles.size();
+    VkDeviceSize trianglesBufferSize = sizeof(uint16_t) * triangles.size();
+    VkDeviceSize linesBufferSize = sizeof(uint16_t) * lines.size();
+    VkDeviceSize pointsBufferSize = sizeof(uint16_t) * points.size();
 
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    VkBuffer trianglesStagingBuffer, linesStagingBuffer, pointsStagingBuffer;
+    VkDeviceMemory trianglesStagingBufferMemory, linesStagingBufferMemory, pointsStagingBufferMemory;
+    createBuffer(trianglesBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, trianglesStagingBuffer, trianglesStagingBufferMemory);
+    createBuffer(linesBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, linesStagingBuffer, linesStagingBufferMemory);
+    createBuffer(pointsBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, pointsStagingBuffer, pointsStagingBufferMemory);
 
-    void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, triangles.data(), (size_t) bufferSize);
-    vkUnmapMemory(device, stagingBufferMemory);
+    void *trianglesData;
+    void *linesData;
+    void *pointsData;
 
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+    vkMapMemory(device, trianglesStagingBufferMemory, 0, trianglesBufferSize, 0, &trianglesData);
+    memcpy(trianglesData, triangles.data(), (size_t) trianglesBufferSize);
+    vkUnmapMemory(device, trianglesStagingBufferMemory);
+    vkMapMemory(device, linesStagingBufferMemory, 0, linesBufferSize, 0, &linesData);
+    memcpy(linesData, lines.data(), (size_t) linesBufferSize);
+    vkUnmapMemory(device, linesStagingBufferMemory);
+    vkMapMemory(device, pointsStagingBufferMemory, 0, pointsBufferSize, 0, &pointsData);
+    memcpy(pointsData, points.data(), (size_t) pointsBufferSize);
+    vkUnmapMemory(device, pointsStagingBufferMemory);
 
-    copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+    createBuffer(trianglesBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, trianglesIndexBuffer, trianglesIndexBufferMemory);
+    copyBuffer(trianglesStagingBuffer, trianglesIndexBuffer, trianglesBufferSize);
+    createBuffer(linesBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, linesIndexBuffer, linesIndexBufferMemory);
+    copyBuffer(linesStagingBuffer, linesIndexBuffer, linesBufferSize);
+    createBuffer(pointsBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, pointsIndexBuffer, pointsIndexBufferMemory);
+    copyBuffer(pointsStagingBuffer, pointsIndexBuffer, pointsBufferSize);
 
-    vkDestroyBuffer(device, stagingBuffer, nullptr);
-    vkFreeMemory(device, stagingBufferMemory, nullptr);
+    vkDestroyBuffer(device, trianglesStagingBuffer, nullptr);
+    vkFreeMemory(device, trianglesStagingBufferMemory, nullptr);
+    vkDestroyBuffer(device, linesStagingBuffer, nullptr);
+    vkFreeMemory(device, linesStagingBufferMemory, nullptr);
+    vkDestroyBuffer(device, pointsStagingBuffer, nullptr);
+    vkFreeMemory(device, pointsStagingBufferMemory, nullptr);
 }
 
 void Engine::createUniformBuffers() {
@@ -827,19 +872,25 @@ void Engine::createCommandBuffers() {
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();
 
-        vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
         VkBuffer vertexBuffers[] = {vertexBuffer};
         VkDeviceSize offsets[] = {0};
+
+        vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, trianglesGraphicsPipeline);
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffers[i], trianglesIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                                0, 1, &descriptorSets[i], 0, nullptr);
+        vkCmdDrawIndexed(commandBuffers[i], triangles.size(), 1, 0, 0, 0);
 
-        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, linesGraphicsPipeline);
+        vkCmdBindIndexBuffer(commandBuffers[i], linesIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(commandBuffers[i], lines.size(), 1, 0, 0, 0);
 
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[i], 0, nullptr);
-
-        vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(triangles.size()), 1, 0, 0, 0);
+        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pointsGraphicsPipeline);
+        vkCmdBindIndexBuffer(commandBuffers[i], pointsIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(commandBuffers[i], points.size(), 1, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffers[i]);
 
@@ -847,6 +898,7 @@ void Engine::createCommandBuffers() {
             throw std::runtime_error("failed to record command buffer!");
         }
     }
+
 }
 
 void Engine::createSyncObjects() {
