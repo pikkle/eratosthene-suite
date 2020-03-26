@@ -220,6 +220,8 @@ void Engine::cleanupSwapChain() {
     vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
     vkDestroyPipeline(device, trianglesGraphicsPipeline, nullptr);
+    vkDestroyPipeline(device, linesGraphicsPipeline, nullptr);
+    vkDestroyPipeline(device, pointsGraphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
 
