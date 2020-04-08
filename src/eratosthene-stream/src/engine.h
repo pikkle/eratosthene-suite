@@ -28,7 +28,8 @@ const int MAX_FRAMES_IN_FLIGHT = 2;
 
 class Engine {
 public:
-    explicit Engine(GLFWwindow *window);
+    // @TODO: change constructor to not take a GLFW window as a parameter (we won't need a window in the future)
+    explicit Engine(uint32_t width, uint32_t height);
     ~Engine();
     void feedVertices(std::vector<Vertex> vector);
     void drawTriangles(std::vector<uint16_t> indices);
@@ -50,10 +51,11 @@ private:
      * ------------------------------------------------------------------------
      */
 
+    uint32_t width, height;
+
     // Vulkan main objects
-    GLFWwindow *window;
     VkInstance instance;
-    VkSurfaceKHR surface;
+    VkSurfaceKHR surface; //
     VkDebugUtilsMessengerEXT debugMessenger;
 
     // Vulkan devices
@@ -61,7 +63,14 @@ private:
     VkDevice device;
 
     VkQueue graphicsQueue;
-    VkQueue presentQueue;
+
+    VkFramebuffer singleFramebuffer;
+    VkImage colorImage;
+    VkDeviceMemory colorImageMemory;
+    VkImageView colorImageView;
+
+    VkBuffer uniformBuffer;
+    VkDeviceMemory uniformBufferMemory;
 
     VkSwapchainKHR swapChain;
     std::vector<VkImage> swapChainImages;
@@ -99,11 +108,12 @@ private:
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
 
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
+//    std::vector<VkBuffer> uniformBuffers;
+//    std::vector<VkDeviceMemory> uniformBuffersMemory;
 
     VkDescriptorPool descriptorPool;
-    std::vector<VkDescriptorSet> descriptorSets;
+    VkDescriptorSet descriptorSet;
+//    std::vector<VkDescriptorSet> descriptorSets;
 
     std::vector<VkCommandBuffer> commandBuffers;
 
@@ -164,6 +174,7 @@ private:
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
 
+    void createRenderImage();
 };
 
 

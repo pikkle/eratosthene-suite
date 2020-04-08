@@ -1,3 +1,5 @@
+
+// @TODO: remove import of GLFW and include vulkan directly instead
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -65,17 +67,13 @@ private:
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-        window = glfwCreateWindow(WIDTH, HEIGHT, window_title, nullptr, nullptr);
-        glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-
         auto view = glm::lookAt(
                 glm::vec3(2.0f, 2.0f, 2.0f), // eye
                 glm::vec3(0.0f, 0.0f, 0.0f), // center
                 glm::vec3(0.0f, 0.0f, 1.0f) // up
         );
 
-        engine = new Engine(window);
+        engine = new Engine(WIDTH, HEIGHT);
         engine->feedVertices(vertices);
         if (triangles.size() % 3 != 0) {
             throw std::runtime_error("Invalid format of triangle indices list");
@@ -99,8 +97,8 @@ private:
     }
 
     void mainLoop() {
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
+        while (true) {
+//            glfwPollEvents();
             engine->render();
         }
         engine->waitIdle();
@@ -108,8 +106,8 @@ private:
 
     void cleanup() {
         delete engine;
-        glfwDestroyWindow(window);
-        glfwTerminate();
+//        glfwDestroyWindow(window);
+//        glfwTerminate();
     }
 
 };

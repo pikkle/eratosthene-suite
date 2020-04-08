@@ -7,7 +7,8 @@
 #define ERATOSTHENE_STREAM_HARDWARE_CPP_H
 
 const std::vector<const char *> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        // VK_KHR_SWAPCHAIN_EXTENSION_NAME
+//        VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME
 };
 
 void pickPhysicalDevice(VkInstance& instance, VkPhysicalDevice& physicalDevice, VkSurfaceKHR &surface);

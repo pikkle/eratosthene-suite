@@ -39,6 +39,14 @@ bool checkDeviceExtensionSupport(VkPhysicalDevice& device) {
         requiredExtensions.erase(extension.extensionName);
     }
 
+    if (!requiredExtensions.empty()) {
+        std::cerr << "Missing extensions:" << std::endl;
+        auto it = requiredExtensions.begin();
+        for (auto ext = *it; it != requiredExtensions.end(); it++) {
+            std::cerr << "\t" << ext << std::endl;
+        }
+    }
+
     return requiredExtensions.empty();
 }
 
@@ -48,16 +56,10 @@ bool isDeviceSuitable(VkPhysicalDevice &device, VkSurfaceKHR &surface) {
 
     bool extensionsSupported = checkDeviceExtensionSupport(device);
 
-    bool swapChainAdequate = false;
-    if (extensionsSupported) {
-        SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device, surface);
-        swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
-    }
-
     VkPhysicalDeviceFeatures supportedFeatures;
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
-    return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
+    return indices.isComplete() && extensionsSupported && supportedFeatures.samplerAnisotropy;
 }
 
 QueueFamilyIndices findQueueFamilies(VkPhysicalDevice& device, VkSurfaceKHR& surface) {
@@ -73,11 +75,6 @@ QueueFamilyIndices findQueueFamilies(VkPhysicalDevice& device, VkSurfaceKHR& sur
     for (const auto& queueFamily : queueFamilies) {
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.graphicsFamily = i;
-        }
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-        if (presentSupport) {
-            indices.presentFamily = i;
         }
         if (indices.isComplete()) {
             break;
