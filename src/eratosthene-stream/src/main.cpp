@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <vector>
+#include <thread>
 
 #include "models.h"
 #include "utils.h"
@@ -20,6 +21,7 @@
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
+const float FPS = 60;
 
 const std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
@@ -73,7 +75,7 @@ private:
                 glm::vec3(0.0f, 0.0f, 1.0f) // up
         );
 
-        engine = new Engine(WIDTH, HEIGHT);
+        engine = new Engine(WIDTH, HEIGHT, FPS);
         engine->feedVertices(vertices);
         if (triangles.size() % 3 != 0) {
             throw std::runtime_error("Invalid format of triangle indices list");

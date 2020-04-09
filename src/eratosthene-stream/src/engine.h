@@ -29,7 +29,7 @@ const int MAX_FRAMES_IN_FLIGHT = 2;
 class Engine {
 public:
     // @TODO: change constructor to not take a GLFW window as a parameter (we won't need a window in the future)
-    explicit Engine(uint32_t width, uint32_t height);
+    explicit Engine(uint32_t width, uint32_t height, float fps);
     ~Engine();
     void feedVertices(std::vector<Vertex> vector);
     void drawTriangles(std::vector<uint16_t> indices);
@@ -52,6 +52,7 @@ private:
      */
 
     uint32_t width, height;
+    float fps;
 
     // Vulkan main objects
     VkInstance instance;
@@ -108,12 +109,8 @@ private:
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
 
-//    std::vector<VkBuffer> uniformBuffers;
-//    std::vector<VkDeviceMemory> uniformBuffersMemory;
-
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
-//    std::vector<VkDescriptorSet> descriptorSets;
 
     std::vector<VkCommandBuffer> commandBuffers;
 
@@ -136,13 +133,9 @@ private:
     void createInstance();
     void createSurface();
     void createLogicalDevice();
-    void createSwapChain();
-    void recreateSwapChain();
     void cleanup();
-    void cleanupSwapChain();
     void setupDebugMessenger();
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
-    void createImageViews();
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
                      VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
     VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling,
