@@ -52,7 +52,7 @@ private:
      */
 
     uint32_t width, height;
-    float fps;
+    float refreshDelay;
 
     // Vulkan main objects
     VkInstance instance;
@@ -168,6 +168,9 @@ private:
     VkShaderModule createShaderModule(const std::vector<char> &code);
 
     void createRenderImage();
+    void outputResult();
+
+    void submitWork(VkCommandBuffer cmdBuffer, VkQueue queue);
 };
 
 
