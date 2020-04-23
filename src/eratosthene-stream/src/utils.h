@@ -13,9 +13,9 @@ typedef uint32_t uint32;
 
 #define DEBUG (!NDEBUG)
 
-#define TEST_RESULT(test_cmd, error_msg) if (!(test_cmd)) throw std::runtime_error(error_msg)
+#define TEST_ASSERT(test_cmd, error_msg) if (!(test_cmd)) throw std::runtime_error(error_msg)
 /*! test a vulkan command to return the code VK_SUCCESS, otherwise crashes with a given message */
-#define TEST_VK_RESULT(test_cmd, error_msg) TEST_RESULT(test_cmd == VK_SUCCESS, error_msg)
+#define TEST_VK_ASSERT(test_cmd, error_msg) TEST_ASSERT(test_cmd == VK_SUCCESS, error_msg)
 
 
 VkResult create_debug(VkInstance &instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {

@@ -87,7 +87,7 @@ void init() {
     create_device();
     create_command_pool();
     bind_data();
-    create_attachment();
+    create_attachments();
 //    create_pipeline();
 //    create_render_pass();
 //    create_descriptor_layout();
@@ -112,9 +112,9 @@ inline void submit_work(VkCommandBuffer cmd, VkQueue queue) {
             .flags = 0,
     };
     VkFence fence;
-    TEST_VK_RESULT(vkCreateFence(er_device, &fenceInfo, nullptr, &fence), "error while creating fence");
-    TEST_VK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence), "error while submitting to queue");
-    TEST_VK_RESULT(vkWaitForFences(er_device, 1, &fence, VK_TRUE, UINT64_MAX), "error while waiting for queue submission fences");
+    TEST_VK_ASSERT(vkCreateFence(er_device, &fenceInfo, nullptr, &fence), "error while creating fence");
+    TEST_VK_ASSERT(vkQueueSubmit(queue, 1, &submitInfo, fence), "error while submitting to queue");
+    TEST_VK_ASSERT(vkWaitForFences(er_device, 1, &fence, VK_TRUE, UINT64_MAX), "error while waiting for queue submission fences");
     vkDestroyFence(er_device, fence, nullptr);
 }
 
@@ -137,7 +137,7 @@ inline void create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags m
             .usage = usageFlags,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
-    TEST_VK_RESULT(vkCreateBuffer(er_device, &bufferCreateInfo, nullptr, &wrap->buf), "error while creating buffer");
+    TEST_VK_ASSERT(vkCreateBuffer(er_device, &bufferCreateInfo, nullptr, &wrap->buf), "error while creating buffer");
 
     VkMemoryRequirements memReqs;
     vkGetBufferMemoryRequirements(er_device, wrap->buf, &memReqs);
@@ -146,16 +146,16 @@ inline void create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags m
             .allocationSize = memReqs.size,
             .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, memoryPropertyFlags),
     };
-    TEST_VK_RESULT(vkAllocateMemory(er_device, &memAlloc, nullptr, &wrap->mem), "error while allocating memory to buffer");
+    TEST_VK_ASSERT(vkAllocateMemory(er_device, &memAlloc, nullptr, &wrap->mem), "error while allocating memory to buffer");
 
     if (data != nullptr) {
         void *mapped;
-        TEST_VK_RESULT(vkMapMemory(er_device, wrap->mem, 0, size, 0, &mapped), "error while maping memory");
+        TEST_VK_ASSERT(vkMapMemory(er_device, wrap->mem, 0, size, 0, &mapped), "error while maping memory");
         memcpy(mapped, data, size);
         vkUnmapMemory(er_device, wrap->mem);
     }
 
-    TEST_VK_RESULT(vkBindBufferMemory(er_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
+    TEST_VK_ASSERT(vkBindBufferMemory(er_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
 }
 
 inline void bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
@@ -166,35 +166,74 @@ inline void bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWr
             .commandBufferCount = 1,
     };
     VkCommandBuffer copyCmd;
-    TEST_VK_RESULT(vkAllocateCommandBuffers(er_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffers");
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(er_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffers");
     VkCommandBufferBeginInfo cmdBufInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
 
-    TEST_VK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while starting command buffer");
+    TEST_VK_ASSERT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while starting command buffer");
     VkBufferCopy copyRegion = {
             .size = dataSize,
     };
     vkCmdCopyBuffer(copyCmd, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
-    TEST_VK_RESULT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
+    TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
     submit_work(copyCmd, er_transfer_queue);
 
     vkDestroyBuffer(er_device, stagingWrap.buf, nullptr);
     vkFreeMemory(er_device, stagingWrap.mem, nullptr);
 }
 
-inline VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
-    for (VkFormat format : candidates) {
-        VkFormatProperties props;
-        vkGetPhysicalDeviceFormatProperties(er_phys_device, format, &props);
-        if ((props.linearTilingFeatures & features) == features &&
-            (tiling == VK_IMAGE_TILING_LINEAR || tiling == VK_IMAGE_TILING_OPTIMAL)) {
+inline VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
+    for (auto& format : candidates) {
+        VkFormatProperties formatProps;
+        vkGetPhysicalDeviceFormatProperties(er_phys_device, format, &formatProps);
+        if (formatProps.optimalTilingFeatures & features) {
             return format;
         }
     }
     throw std::runtime_error("failed to find supported format!");
 }
 
+inline void create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect) {
+    VkImageCreateInfo imageInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = format,
+            .extent = {
+                    .width = WIDTH,
+                    .height = HEIGHT,
+                    .depth = 1,},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = imgUsage,
+    };
+    VkMemoryRequirements memReqs;
+    TEST_VK_ASSERT(vkCreateImage(er_device, &imageInfo, nullptr, &att.img), "error while creating image");
+    vkGetImageMemoryRequirements(er_device, att.img, &memReqs);
+    VkMemoryAllocateInfo memAlloc = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = memReqs.size,
+            .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    TEST_VK_ASSERT(vkAllocateMemory(er_device, &memAlloc, nullptr, &att.mem), "error while allocating attachment image memory");
+    TEST_VK_ASSERT(vkBindImageMemory(er_device, att.img, att.mem, 0), "error while binding attachment image to memory");
+
+    VkImageViewCreateInfo viewInfo = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = att.img,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = format,
+            .subresourceRange = {
+                    .aspectMask = aspect,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,},
+    };
+    TEST_VK_ASSERT(vkCreateImageView(er_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
+}
 
 /* ----------- End of helper methods ----------- */
 
@@ -211,8 +250,8 @@ void create_instance() {
     };
 
 #ifdef DEBUG
-    TEST_RESULT(check_validation_layers_support(validation_layers),
-                 "validation layers requested, but not available!");
+    TEST_ASSERT(check_validation_layers_support(validation_layers),
+                "validation layers requested, but not available!");
 #endif
 
     VkInstanceCreateInfo createInfo = {
@@ -229,8 +268,8 @@ void create_instance() {
         .ppEnabledExtensionNames = extensions.data(),
     };
 
-    TEST_VK_RESULT(vkCreateInstance(&createInfo, nullptr, &er_instance),
-            "failed to create instance!");
+    TEST_VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &er_instance),
+                   "failed to create instance!");
 }
 
 void setup_debugger() {
@@ -241,14 +280,14 @@ void setup_debugger() {
     };
     auto vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
             vkGetInstanceProcAddr(er_instance, "vkCreateDebugReportCallbackEXT"));
-    TEST_VK_RESULT(vkCreateDebugReportCallbackEXT(er_instance, &debugReportCreateInfo, nullptr, &er_debug_report),
-            "error while creating debug reporter");
+    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(er_instance, &debugReportCreateInfo, nullptr, &er_debug_report),
+                   "error while creating debug reporter");
 }
 
 void create_device() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(er_instance, &deviceCount, nullptr);
-    TEST_RESULT(deviceCount > 0, "failed to find GPUs with Vulkan support!");
+    TEST_ASSERT(deviceCount > 0, "failed to find GPUs with Vulkan support!");
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(er_instance, &deviceCount, devices.data());
@@ -265,7 +304,7 @@ void create_device() {
             break;
         }
     }
-    TEST_RESULT(er_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
+    TEST_ASSERT(er_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
 
     uint32_t queueFamilyCount;
     vkGetPhysicalDeviceQueueFamilyProperties(er_phys_device, &queueFamilyCount, nullptr);
@@ -307,8 +346,8 @@ void create_device() {
         .pQueueCreateInfos = queuesCreateInfos.data(),
     };
 
-    TEST_VK_RESULT(vkCreateDevice(er_phys_device, &deviceCreateInfo, nullptr, &er_device),
-            "failed to create logical device!");
+    TEST_VK_ASSERT(vkCreateDevice(er_phys_device, &deviceCreateInfo, nullptr, &er_device),
+                   "failed to create logical device!");
 
     vkGetDeviceQueue(er_device, er_graphics_queue_family_index, 0, &er_graphics_queue);
     vkGetDeviceQueue(er_device, er_transfer_queue_family_index, 0, &er_transfer_queue);
@@ -320,9 +359,9 @@ void create_command_pool() {
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
         .queueFamilyIndex = er_graphics_queue_family_index,
     };
-    TEST_VK_RESULT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_graphics_command_pool), "error while creating graphics command pool");
+    TEST_VK_ASSERT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_graphics_command_pool), "error while creating graphics command pool");
     cmdPoolInfo.queueFamilyIndex = er_transfer_queue_family_index;
-    TEST_VK_RESULT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_transfer_command_pool), "error while creating graphics command pool");
+    TEST_VK_ASSERT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_transfer_command_pool), "error while creating graphics command pool");
 }
 
 void bind_data() {
@@ -368,6 +407,30 @@ void bind_data() {
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                   &er_points_buffer, pointBufferSize);
     bind_memory(pointBufferSize, stagingWrap, er_points_buffer);
+}
+
+void create_attachments() {
+    // Color attachment
+    create_attachment(
+            er_color_attachment,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            er_color_format,
+            VK_IMAGE_ASPECT_COLOR_BIT
+    );
+
+    // Depth attachment
+    er_depth_format = findSupportedFormat(
+            {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT,
+             VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM_S8_UINT, VK_FORMAT_D16_UNORM},
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+    );
+    create_attachment(
+            er_depth_attachment,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            er_depth_format,
+            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
+    );
+
 }
 
 /* -------- End of vulkan setup methods ------- */

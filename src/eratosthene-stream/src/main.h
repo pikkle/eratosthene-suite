@@ -33,7 +33,7 @@ void create_command_pool();
 void bind_data();
 void create_descriptor_layout();
 void create_pipeline();
-void create_attachment();
+void create_attachments();
 void create_render_pass();
 void create_graphics_pipeline();
 void create_transfer_pipeline();
