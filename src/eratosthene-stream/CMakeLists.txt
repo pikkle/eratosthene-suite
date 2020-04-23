@@ -22,18 +22,13 @@ set(COMPILED_RESOURCES
         )
 
 set(HEADERS
-        src/engine.h
+        src/main.h
         src/models.h
         src/utils.h
-        src/hardware.h
         )
 
 set(SOURCES
         src/main.cpp
-        src/engine.cpp
-        src/models.cpp
-        src/utils.cpp
-        src/hardware.cpp
         )
 
 
