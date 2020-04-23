@@ -19,6 +19,8 @@ VkFormat er_color_format = VK_FORMAT_R8G8B8A8_UNORM;
 VkFormat er_depth_format;
 Attachment er_color_attachment;
 Attachment er_depth_attachment;
+VkRenderPass er_render_pass;
+VkFramebuffer er_framebuffer;
 VkBuffer er_uni_buffer;
 BufferWrap er_vertices_buffer;
 BufferWrap er_triangles_buffer;
