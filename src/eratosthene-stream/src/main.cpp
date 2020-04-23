@@ -27,7 +27,8 @@ const std::vector<const char *> extensions = {
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 };
 
-/* DEBUG DATA */
+/* --------------- Debug data --------------- */
+
 glm::mat4x4 view = glm::lookAt(
         glm::vec3(2.0f, 2.0f, 2.0f), // eye
         glm::vec3(0.0f, 0.0f, 0.0f), // center
@@ -63,7 +64,7 @@ const std::vector<uint16_t> debug_lines = {
 const std::vector<uint16_t> debug_points = {
         10,
 };
-/* END OF DEBUG DATA */
+/* ------------- End of debug data ------------- */
 
 int main() {
     init();
@@ -84,20 +85,120 @@ void init() {
     setup_debugger();
 #endif
     create_device();
-//    create_command_pool();
+    create_command_pool();
+    bind_data();
+    create_attachment();
 //    create_pipeline();
-//    create_attachment();
 //    create_render_pass();
 //    create_descriptor_layout();
 //    create_graphics_pipeline();
 //    create_transfer_pipeline();
 //    create_depth_resources();
-//    create_vertex_buffer();
-//    create_index_buffer();
 //    create_uniform_buffer();
 //    create_descriptors();
 //    create_command_buffers();
 }
+
+/* --------------- Helper methods --------------- */
+
+inline void submit_work(VkCommandBuffer cmd, VkQueue queue) {
+    VkSubmitInfo submitInfo = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmd,
+    };
+    VkFenceCreateInfo fenceInfo = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = 0,
+    };
+    VkFence fence;
+    TEST_VK_RESULT(vkCreateFence(er_device, &fenceInfo, nullptr, &fence), "error while creating fence");
+    TEST_VK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence), "error while submitting to queue");
+    TEST_VK_RESULT(vkWaitForFences(er_device, 1, &fence, VK_TRUE, UINT64_MAX), "error while waiting for queue submission fences");
+    vkDestroyFence(er_device, fence, nullptr);
+}
+
+inline uint32_t get_memtype_index(uint32_t typeBits, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
+    vkGetPhysicalDeviceMemoryProperties(er_phys_device, &deviceMemoryProperties);
+    for (uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; i++) {
+        if ((typeBits & 1) == 1 && (deviceMemoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+        typeBits >>= 1;
+    }
+    return 0;
+}
+
+inline void create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data = nullptr) {
+    VkBufferCreateInfo bufferCreateInfo {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = size,
+            .usage = usageFlags,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    TEST_VK_RESULT(vkCreateBuffer(er_device, &bufferCreateInfo, nullptr, &wrap->buf), "error while creating buffer");
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(er_device, wrap->buf, &memReqs);
+    VkMemoryAllocateInfo memAlloc = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = memReqs.size,
+            .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, memoryPropertyFlags),
+    };
+    TEST_VK_RESULT(vkAllocateMemory(er_device, &memAlloc, nullptr, &wrap->mem), "error while allocating memory to buffer");
+
+    if (data != nullptr) {
+        void *mapped;
+        TEST_VK_RESULT(vkMapMemory(er_device, wrap->mem, 0, size, 0, &mapped), "error while maping memory");
+        memcpy(mapped, data, size);
+        vkUnmapMemory(er_device, wrap->mem);
+    }
+
+    TEST_VK_RESULT(vkBindBufferMemory(er_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
+}
+
+inline void bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
+    VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = er_transfer_command_pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+    };
+    VkCommandBuffer copyCmd;
+    TEST_VK_RESULT(vkAllocateCommandBuffers(er_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffers");
+    VkCommandBufferBeginInfo cmdBufInfo = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+
+    TEST_VK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while starting command buffer");
+    VkBufferCopy copyRegion = {
+            .size = dataSize,
+    };
+    vkCmdCopyBuffer(copyCmd, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
+    TEST_VK_RESULT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
+    submit_work(copyCmd, er_transfer_queue);
+
+    vkDestroyBuffer(er_device, stagingWrap.buf, nullptr);
+    vkFreeMemory(er_device, stagingWrap.mem, nullptr);
+}
+
+inline VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
+    for (VkFormat format : candidates) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(er_phys_device, format, &props);
+        if ((props.linearTilingFeatures & features) == features &&
+            (tiling == VK_IMAGE_TILING_LINEAR || tiling == VK_IMAGE_TILING_OPTIMAL)) {
+            return format;
+        }
+    }
+    throw std::runtime_error("failed to find supported format!");
+}
+
+
+/* ----------- End of helper methods ----------- */
+
+/* ----------- Vulkan setup methods ------------ */
 
 void create_instance() {
     VkApplicationInfo appInfo = {
@@ -185,6 +286,7 @@ void create_device() {
                 .pQueuePriorities = &defaultQueuePriority,
             };
             has_gq = true;
+            continue;
         }
         if (queueFamilyProperties[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !has_tq) {
             er_transfer_queue_family_index = i;
@@ -194,7 +296,8 @@ void create_device() {
                     .queueCount = 1,
                     .pQueuePriorities = &defaultQueuePriority,
             };
-            has_gq = true;
+            has_tq = true;
+            continue;
         }
     }
     std::vector<VkDeviceQueueCreateInfo> queuesCreateInfos = {graphicsQueueInfo, transferQueueInfo};
@@ -211,19 +314,60 @@ void create_device() {
     vkGetDeviceQueue(er_device, er_transfer_queue_family_index, 0, &er_transfer_queue);
 }
 
-void submit_work(VkCommandBuffer cmd, VkQueue queue) {
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cmd,
+void create_command_pool() {
+    VkCommandPoolCreateInfo cmdPoolInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = er_graphics_queue_family_index,
     };
-    VkFenceCreateInfo fenceInfo = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .flags = 0,
-    };
-    VkFence fence;
-    TEST_VK_RESULT(vkCreateFence(er_device, &fenceInfo, nullptr, &fence), "error while creating fence");
-    TEST_VK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence), "error while submitting to queue");
-    TEST_VK_RESULT(vkWaitForFences(er_device, 1, &fence, VK_TRUE, UINT64_MAX), "error while waiting for queue submission fences");
-    vkDestroyFence(er_device, fence, nullptr);
+    TEST_VK_RESULT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_graphics_command_pool), "error while creating graphics command pool");
+    cmdPoolInfo.queueFamilyIndex = er_transfer_queue_family_index;
+    TEST_VK_RESULT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_transfer_command_pool), "error while creating graphics command pool");
 }
+
+void bind_data() {
+    BufferWrap stagingWrap;
+    VkDeviceSize vertexBufferSize = debug_vertices.size() * sizeof(Vertex);
+    VkDeviceSize triangleBufferSize = debug_triangles.size() * sizeof(uint16_t);
+    VkDeviceSize lineBufferSize = debug_lines.size() * sizeof(uint16_t);
+    VkDeviceSize pointBufferSize = debug_points.size() * sizeof(uint16_t);
+
+    // Vertices
+    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  &stagingWrap, vertexBufferSize, (void *) debug_vertices.data());
+    create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                  &er_vertices_buffer, vertexBufferSize);
+    bind_memory(vertexBufferSize, stagingWrap, er_vertices_buffer);
+
+
+    // Triangles
+    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  &stagingWrap, triangleBufferSize, (void *) debug_vertices.data());
+    create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                  &er_triangles_buffer, triangleBufferSize);
+    bind_memory(triangleBufferSize, stagingWrap, er_triangles_buffer);
+
+    // Lines
+    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  &stagingWrap, lineBufferSize, (void *) debug_lines.data());
+    create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                  &er_lines_buffer, lineBufferSize);
+    bind_memory(lineBufferSize, stagingWrap, er_lines_buffer);
+
+    // Points
+    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  &stagingWrap, pointBufferSize, (void *) debug_points.data());
+    create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                  &er_points_buffer, pointBufferSize);
+    bind_memory(pointBufferSize, stagingWrap, er_points_buffer);
+}
+
+/* -------- End of vulkan setup methods ------- */
