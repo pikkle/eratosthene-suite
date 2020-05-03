@@ -13,6 +13,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <seasocks/Server.h>
+#include <seasocks/Logger.h>
+#include <seasocks/PrintfLogger.h>
+#include <seasocks/WebSocket.h>
+
 #include "main.h"
 #include "models.h"
 #include "utils.h"
@@ -20,6 +25,7 @@
 const int WIDTH = 800;
 const int HEIGHT = 600;
 const float FPS = 60.f;
+const int STREAM_PORT = 8080;
 
 const char* SHADER_VERT_FILE = "shaders/shader.vert.spv";
 const char* SHADER_FRAG_FILE = "shaders/shader.frag.spv";
@@ -72,11 +78,17 @@ const std::vector<uint16_t> debug_points = {
 /* ------------- End of debug data ------------- */
 
 int main() {
+    setup_server();
+    /* TODO: move the initialization of the vulkan engine after a new client opens a connection with the server.
+     a thread should be created for that client to be able to open more connections and thus allowing multiple clients
+     to use the rendering engine in stream (each client should have its own renderer on the server, since he need to
+     manipulate the camera and the data) */
     init();
     try {
         while (true) {
             // TODO: render as often as needed based on FPS value
             draw_frame();
+            broadcast_frame();
             exit(1);
         }
     } catch (const std::exception& e) {
@@ -925,4 +937,47 @@ const char *output_result() {
     return imagedata;
 }
 
-/* -------- End of vulkan setup methods ------- */
+/* ----- End of vulkan rendering methods ------ */
+
+
+/* ----------- Broadcasting methods ----------- */
+
+void setup_server() {
+    er_logger = std::make_shared<seasocks::PrintfLogger>();
+    er_server = new seasocks::Server(er_logger);
+    er_server->addWebSocketHandler("/", std::make_shared<ErStreamRendererHandler>(er_server_handler));
+    er_server->serve("web", STREAM_PORT);
+}
+
+void ErStreamRendererHandler::onConnect(seasocks::WebSocket *socket) {
+    er_open_sockets.insert(socket);
+    // TODO: init vulkan engine
+}
+
+void ErStreamRendererHandler::onData(seasocks::WebSocket *socket, const char *data) {
+    Handler::onData(socket, data);
+    // TODO: handle received data (controls over the camera and time modification)
+}
+
+void ErStreamRendererHandler::onDisconnect(seasocks::WebSocket *socket) {
+    er_open_sockets.erase(socket);
+    // TODO: free up vulkan engine
+}
+
+void broadcast_frame() {
+    // TODO: send frame to corresponding socket
+    // socket->send(frame);
+}
+
+void close_server() {
+    for (auto socket: er_server_handler.er_open_sockets) {
+        socket->close();
+    }
+    er_server->terminate();
+}
+
+/* -------- End of broadcasting methods ------- */
+
+
+
+

@@ -1,9 +1,27 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <seasocks/Server.h>
+#include <seasocks/WebSocket.h>
+
 #include "models.h"
 #include "utils.h"
 
+// Server data
+struct ErStreamRendererHandler : seasocks::WebSocket::Handler {
+    std::set<seasocks::WebSocket*> er_open_sockets;
+    void onConnect(seasocks::WebSocket *socket) override;
+    void onData(seasocks::WebSocket *socket, const char *data) override;
+    void onDisconnect(seasocks::WebSocket *socket) override;
+};
+seasocks::Server *er_server;
+std::shared_ptr<seasocks::Logger> er_logger;
+ErStreamRendererHandler er_server_handler;
+
+
+
+// Vulkan engine data
+// TODO: move all vulkan data in a struct so that multiple renderers can be created for each client
 VkInstance er_instance;
 VkSurfaceKHR er_surface = VK_NULL_HANDLE;
 VkPhysicalDevice er_phys_device;
@@ -35,6 +53,11 @@ BufferWrap er_triangles_buffer;
 BufferWrap er_lines_buffer;
 BufferWrap er_points_buffer;
 BufferWrap er_uniform_buffer;
+
+
+void setup_server();
+void close_server();
+void broadcast_frame();
 
 void init();
 void create_instance();
