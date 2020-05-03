@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -705,12 +706,11 @@ void create_command_buffers() {
     VkRect2D scissor = {.extent = {WIDTH, HEIGHT},};
 
     vkCmdSetScissor(er_command_buffer, 0, 1, &scissor);
+    vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set, 0, nullptr);
+    vkCmdBindVertexBuffers(er_command_buffer, 0, 1, vertexBuffers, offsets);
 
     vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_triangles);
-    vkCmdBindVertexBuffers(er_command_buffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(er_command_buffer, er_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set, 0, nullptr);
-
     vkCmdDrawIndexed(er_command_buffer, debug_triangles.size(), 1, 0, 0, 0);
 
     vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_lines);
@@ -772,11 +772,35 @@ void create_descriptor_set() {
     vkUpdateDescriptorSets(er_device, 1, &descriptorWrite, 0, nullptr);
 }
 
+/* -------- End of vulkan setup methods ------- */
+
+
+/* --------- Vulkan rendering methods --------- */
+
+void update_uniform_buffers() {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject ubo = {
+            .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+            .view = view,
+            .proj = glm::perspective(glm::radians(45.0f), WIDTH / (float) HEIGHT, 0.1f, 10.0f),
+    };
+    ubo.proj[1][1] *= -1;
+
+    void *data;
+    vkMapMemory(er_device, er_uniform_buffer.mem, 0, sizeof(ubo), 0, &data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(er_device, er_uniform_buffer.mem);
+}
+
 void draw_frame() {
+    update_uniform_buffers();
     submit_work(er_command_buffer, er_graphics_queue);
     vkDeviceWaitIdle(er_device);
     output_result();
-    // TODO update command buffer to pass new uniform transforms
 }
 
 const char *output_result() {
@@ -855,7 +879,7 @@ const char *output_result() {
     };
 
     vkCmdCopyImage(copyCmd, er_color_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            copyImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1, &imageCopyRegion);
+                   copyImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageCopyRegion);
 
     // Transition destination image to general layout, which is the required layout for mapping the image memory later on
     imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;

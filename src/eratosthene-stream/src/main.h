@@ -48,7 +48,8 @@ void create_attachments();
 void create_render_pass();
 void create_command_buffers();
 void draw_frame();
+void update_uniform_buffers();
 const char* output_result();
 void store_img_to_disk(const char* imagedata);
-void broadcast_frame();
+
 
