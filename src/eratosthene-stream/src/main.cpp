@@ -92,14 +92,9 @@ void init() {
     bind_data();
     create_attachments();
     create_render_pass();
-//    create_pipeline();
-//    create_descriptor_layout();
-//    create_graphics_pipeline();
-//    create_transfer_pipeline();
-//    create_depth_resources();
-//    create_uniform_buffer();
-//    create_descriptors();
-//    create_command_buffers();
+    create_pipeline();
+    create_descriptor_set();
+    create_command_buffers();
 }
 
 /* --------------- Helper methods --------------- */
@@ -562,7 +557,6 @@ void create_pipeline() {
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .flags = 0,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE,
     };
     VkPipelineRasterizationStateCreateInfo rasterizationState = {
@@ -654,9 +648,125 @@ void create_pipeline() {
         .basePipelineIndex = -1,
     };
 
+    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline_triangles), "error while creating triangles pipeline");
 
-    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline), "error while creating pipeline");
+    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline_lines), "error while creating lines pipeline");
 
+    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline_points), "error while creating points pipeline");
+
+    for (auto stage : shaderStages) {
+        vkDestroyShaderModule(er_device, stage.module, nullptr);
+    }
+}
+
+void create_command_buffers() {
+    VkCommandBufferAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = er_graphics_command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(er_device, &allocInfo, &er_command_buffer), "failed to allocate command buffers!");
+
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    TEST_VK_ASSERT(vkBeginCommandBuffer(er_command_buffer, &beginInfo), "failed to begin recording command buffer!");
+
+    std::array<VkClearValue, 2> clearValues = {};
+    clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+    clearValues[1].depthStencil = { 1.0f, 0 };
+    VkRenderPassBeginInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = er_render_pass,
+        .framebuffer = er_framebuffer,
+        .renderArea = {
+            .offset = {0, 0},
+            .extent = {WIDTH, HEIGHT},},
+        .clearValueCount = static_cast<uint32_t>(clearValues.size()),
+        .pClearValues = clearValues.data(),
+    };
+
+    VkBuffer vertexBuffers[] = {er_vertices_buffer.buf};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBeginRenderPass(er_command_buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport = {
+        .width = (float) WIDTH,
+        .height = (float) HEIGHT,
+        .minDepth = (float)0.0f,
+        .maxDepth = (float)1.0f,
+    };
+    vkCmdSetViewport(er_command_buffer, 0, 1, &viewport);
+    VkRect2D scissor = {.extent = {WIDTH, HEIGHT},};
+
+    vkCmdSetScissor(er_command_buffer, 0, 1, &scissor);
+
+    vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_triangles);
+    vkCmdBindVertexBuffers(er_command_buffer, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(er_command_buffer, er_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
+//    vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set_layout, 0, nullptr);
+
+    vkCmdDrawIndexed(er_command_buffer, debug_triangles.size(), 1, 0, 0, 0);
+
+    vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_lines);
+    vkCmdBindIndexBuffer(er_command_buffer, er_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(er_command_buffer, debug_lines.size(), 1, 0, 0, 0);
+
+    vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_points);
+    vkCmdBindIndexBuffer(er_command_buffer, er_points_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(er_command_buffer, debug_points.size(), 1, 0, 0, 0);
+
+    vkCmdEndRenderPass(er_command_buffer);
+
+    TEST_VK_ASSERT(vkEndCommandBuffer(er_command_buffer), "failed to record command buffer!");
+}
+
+void create_descriptor_set() {
+    VkDescriptorPoolSize poolSize = {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+    };
+    VkDescriptorPoolCreateInfo poolInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &poolSize,
+    };
+    TEST_VK_ASSERT(vkCreateDescriptorPool(er_device, &poolInfo, nullptr, &er_descriptor_pool), "failed to create descriptor pool!");
+
+    VkDescriptorSetAllocateInfo allocInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = er_descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &er_descriptor_set_layout,
+    };
+    TEST_VK_ASSERT(vkAllocateDescriptorSets(er_device, &allocInfo, &er_descriptor_set), "failed to allocate descriptor sets!");
+
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    create_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            &er_uniform_buffer, bufferSize);
+
+    VkDescriptorBufferInfo bufferInfo = {
+        .buffer = er_uniform_buffer.buf,
+        .offset = 0,
+        .range = sizeof(UniformBufferObject),
+    };
+
+    VkWriteDescriptorSet descriptorWrite = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = er_descriptor_set,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .pBufferInfo = &bufferInfo,
+    };
+
+    vkUpdateDescriptorSets(er_device, 1, &descriptorWrite, 0, nullptr);
 }
 
 /* -------- End of vulkan setup methods ------- */
