@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <vector>
+#include <algorithm>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -73,7 +74,9 @@ int main() {
     init();
     try {
         while (true) {
-//            draw_frame();
+            // TODO: render as often as needed based on FPS value
+            draw_frame();
+            exit(1);
         }
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
@@ -767,6 +770,135 @@ void create_descriptor_set() {
     };
 
     vkUpdateDescriptorSets(er_device, 1, &descriptorWrite, 0, nullptr);
+}
+
+void draw_frame() {
+    submit_work(er_command_buffer, er_graphics_queue);
+    vkDeviceWaitIdle(er_device);
+    output_result();
+    // TODO update command buffer to pass new uniform transforms
+}
+
+const char *output_result() {
+    const char* imagedata;
+    VkImage copyImage;
+    VkMemoryRequirements memRequirements;
+    VkDeviceMemory dstImageMemory;
+    VkCommandBuffer copyCmd;
+
+    VkImageCreateInfo imageCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = er_color_format,
+        .extent = {
+                .width = WIDTH,
+                .height = HEIGHT,
+                .depth = 1,
+        },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    TEST_VK_ASSERT(vkCreateImage(er_device, &imageCreateInfo, nullptr, &copyImage), "error while creating copy image");
+
+    vkGetImageMemoryRequirements(er_device, copyImage, &memRequirements);
+    VkMemoryAllocateInfo memAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex = get_memtype_index(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+    };
+
+    TEST_VK_ASSERT(vkAllocateMemory(er_device, &memAllocInfo, nullptr, &dstImageMemory), "error while allocating memory for copy image");
+    TEST_VK_ASSERT(vkBindImageMemory(er_device, copyImage, dstImageMemory, 0), "error while binding memory to copy image");
+
+    VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = er_transfer_command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(er_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffer for image copy");
+    VkCommandBufferBeginInfo cmdBufInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    TEST_VK_ASSERT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while beginning command buffer for image copy");
+
+    VkImageMemoryBarrier imageMemoryBarrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = copyImage,
+        .subresourceRange = VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+    };
+    vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &imageMemoryBarrier);
+
+    VkImageCopy imageCopyRegion = {
+        .srcSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .layerCount = 1,
+        },
+        .dstSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .layerCount = 1,
+        },
+        .extent = {
+            .width = WIDTH,
+            .height = HEIGHT,
+            .depth = 1,
+        }
+    };
+
+    vkCmdCopyImage(copyCmd, er_color_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            copyImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1, &imageCopyRegion);
+
+    // Transition destination image to general layout, which is the required layout for mapping the image memory later on
+    imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    imageMemoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &imageMemoryBarrier);
+    // TODO
+
+    TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while ending command buffers for image copy");
+    submit_work(copyCmd, er_transfer_queue);
+
+    VkImageSubresource subResource{VK_IMAGE_ASPECT_COLOR_BIT};
+    VkSubresourceLayout subResourceLayout;
+
+    vkGetImageSubresourceLayout(er_device, copyImage, &subResource, &subResourceLayout);
+
+    vkMapMemory(er_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&imagedata);
+    imagedata += subResourceLayout.offset;
+
+
+    const char* filename = "headless.ppm";
+    std::ofstream file(filename, std::ios::out | std::ios::binary);
+
+    // ppm header
+    file << "P6\n" << WIDTH << "\n" << HEIGHT << "\n" << 255 << "\n";
+
+    // ppm binary pixel data
+    for (int32_t y = 0; y < HEIGHT; y++) {
+        unsigned int *row = (unsigned int*)imagedata;
+        for (int32_t x = 0; x < WIDTH; x++) {
+            file.write((char*)row, 3);
+            row++;
+        }
+        imagedata += subResourceLayout.rowPitch;
+    }
+    file.close();
+
+    vkUnmapMemory(er_device, dstImageMemory);
+    vkFreeMemory(er_device, dstImageMemory, nullptr);
+    vkDestroyImage(er_device, copyImage, nullptr);
+    return imagedata;
 }
 
 /* -------- End of vulkan setup methods ------- */
