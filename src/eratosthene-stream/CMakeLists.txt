@@ -3,7 +3,7 @@ project(eratosthene-stream)
 
 set(CMAKE_CXX_STANDARD 17)
 find_package(glfw3 3.2 REQUIRED)
-find_package(vulkan REQUIRED)
+find_package(Vulkan REQUIRED)
 
 # include head-files libraries
 include_directories(include)

@@ -181,7 +181,7 @@ inline void bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWr
     vkFreeMemory(er_device, stagingWrap.mem, nullptr);
 }
 
-inline VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
+inline VkFormat find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
     for (auto& format : candidates) {
         VkFormatProperties formatProps;
         vkGetPhysicalDeviceFormatProperties(er_phys_device, format, &formatProps);
@@ -233,7 +233,7 @@ inline void create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFor
     TEST_VK_ASSERT(vkCreateImageView(er_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
 }
 
-VkShaderModule create_shader_module(const std::vector<char> &code) {
+inline VkShaderModule create_shader_module(const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .codeSize = code.size(),
@@ -429,7 +429,7 @@ void create_attachments() {
     );
 
     // Depth attachment
-    er_depth_format = findSupportedFormat(
+    er_depth_format = find_supported_format(
             {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT,
              VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM_S8_UINT, VK_FORMAT_D16_UNORM},
             VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
@@ -544,8 +544,8 @@ void create_pipeline() {
     };
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,
-        .pSetLayouts = nullptr,
+        .setLayoutCount = 1,
+        .pSetLayouts = &er_descriptor_set_layout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange,
     };
@@ -706,7 +706,7 @@ void create_command_buffers() {
     vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_triangles);
     vkCmdBindVertexBuffers(er_command_buffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(er_command_buffer, er_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
-//    vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set_layout, 0, nullptr);
+    vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set, 0, nullptr);
 
     vkCmdDrawIndexed(er_command_buffer, debug_triangles.size(), 1, 0, 0, 0);
 
@@ -761,8 +761,8 @@ void create_descriptor_set() {
         .dstSet = er_descriptor_set,
         .dstBinding = 0,
         .dstArrayElement = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .pBufferInfo = &bufferInfo,
     };
 
