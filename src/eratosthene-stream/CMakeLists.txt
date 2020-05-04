@@ -23,14 +23,16 @@ set(COMPILED_RESOURCES
         )
 
 set(HEADERS
-        src/main.h
+        src/engine.h
         src/models.h
         src/utils.h
+        src/server.h
         )
 
 set(SOURCES
-        src/main.cpp
-        )
+        src/engine.cpp
+        src/server.cpp
+        src/utils.cpp)
 
 
 foreach (RESOURCE ${RESOURCES})

@@ -74,6 +74,7 @@ struct Attachment {
     VkImageView view;
 };
 
+
 struct BufferWrap {
     VkBuffer buf;
     VkDeviceMemory mem;
