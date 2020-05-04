@@ -18,7 +18,9 @@ class Er_vk_engine {
 public:
     Er_vk_engine();
     ~Er_vk_engine();
-    void draw_frame();
+    void draw_frame(char *imagedata);
+
+    static const size_t er_imagedata_size;
 
 private:
     /* Shared vulkan objects among all engines running */
@@ -68,7 +70,7 @@ private:
     void create_render_pass();
     void create_command_buffers();
     void update_uniform_buffers();
-    const char* output_result();
+    void output_result(char *imagedata);
 
     /* Helper methods */
     VkShaderModule create_shader_module(const std::vector<char> &code);

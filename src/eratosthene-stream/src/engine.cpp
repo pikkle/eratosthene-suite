@@ -70,6 +70,8 @@ const std::vector<uint16_t> debug_points = {
 
 VkInstance Er_vk_engine::er_instance = nullptr;
 VkPhysicalDevice Er_vk_engine::er_phys_device = nullptr;
+const size_t Er_vk_engine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
+
 
 Er_vk_engine::Er_vk_engine() {
     if (!Er_vk_engine::er_instance && !er_phys_device) {
@@ -241,7 +243,7 @@ void Er_vk_engine::bind_data() {
     // Triangles
     create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &stagingWrap, triangleBufferSize, (void *) debug_vertices.data());
+                  &stagingWrap, triangleBufferSize, (void *) debug_triangles.data());
     create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                   &er_triangles_buffer, triangleBufferSize);
@@ -411,7 +413,7 @@ void Er_vk_engine::create_pipeline() {
         .flags = 0,
         .depthClampEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .cullMode = VK_CULL_MODE_FRONT_BIT,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .lineWidth = 1.0f,
     };
@@ -627,9 +629,9 @@ void Er_vk_engine::update_uniform_buffers() {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo = {
-            .model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-            .view = view,
-            .proj = glm::perspective(glm::radians(45.0f), WIDTH / (float) HEIGHT, 0.1f, 10.0f),
+        .model = glm::rotate(glm::mat4(1.0f), (time+1.f) * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        .view = view,
+        .proj = glm::perspective(glm::radians(45.0f), WIDTH / (float) HEIGHT, 0.1f, 256.0f),
     };
     ubo.proj[1][1] *= -1;
 
@@ -639,15 +641,14 @@ void Er_vk_engine::update_uniform_buffers() {
     vkUnmapMemory(er_device, er_uniform_buffer.mem);
 }
 
-void Er_vk_engine::draw_frame() {
+void Er_vk_engine::draw_frame(char* imagedata) {
     update_uniform_buffers();
     submit_work(er_command_buffer, er_graphics_queue);
     vkDeviceWaitIdle(er_device);
-    output_result();
+    output_result(imagedata);
 }
 
-const char *Er_vk_engine::output_result() {
-    const char* imagedata;
+void Er_vk_engine::output_result(char* imagedata) {
     VkImage copyImage;
     VkMemoryRequirements memRequirements;
     VkDeviceMemory dstImageMemory;
@@ -739,28 +740,42 @@ const char *Er_vk_engine::output_result() {
 
     vkGetImageSubresourceLayout(er_device, copyImage, &subResource, &subResourceLayout);
 
-    vkMapMemory(er_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&imagedata);
-    imagedata += subResourceLayout.offset;
-
+    std::cout << memRequirements.size << " vs " << Er_vk_engine::er_imagedata_size  << std::endl;
+    char *tmpdata;
+    vkMapMemory(er_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
+    tmpdata += subResourceLayout.offset;
 
     const char* filename = "headless.ppm";
     std::ofstream file(filename, std::ios::out | std::ios::binary);
 
     file << "P6\n" << WIDTH << "\n" << HEIGHT << "\n" << 255 << "\n";
     for (int32_t y = 0; y < HEIGHT; y++) {
-        unsigned int *row = (unsigned int*)imagedata;
+        unsigned int *row = (unsigned int*)tmpdata;
         for (int32_t x = 0; x < WIDTH; x++) {
             file.write((char*)row, 3);
             row++;
         }
-        imagedata += subResourceLayout.rowPitch;
+        tmpdata += subResourceLayout.rowPitch;
     }
     file.close();
+//    memcpy(imagedata, tmpdata, er_imagedata_size);
+//
+//    for (int32_t y = 0; y < HEIGHT; y++) {
+//        unsigned int *row = (unsigned int*)imagedata;
+//        for (int32_t x = 0; x < WIDTH; x++) {
+//            std::cout.write((char*)row, 3);
+//            row++;
+//        }
+//        imagedata += subResourceLayout.rowPitch;
+//    }
 
     vkUnmapMemory(er_device, dstImageMemory);
     vkFreeMemory(er_device, dstImageMemory, nullptr);
     vkDestroyImage(er_device, copyImage, nullptr);
-    return imagedata;
+
+
+
+
 }
 
 /* ----- End of vulkan rendering methods ------ */
