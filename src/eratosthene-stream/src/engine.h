@@ -18,7 +18,7 @@ class Er_vk_engine {
 public:
     Er_vk_engine();
     ~Er_vk_engine();
-    void draw_frame(char *imagedata);
+    void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     static const size_t er_imagedata_size;
 
@@ -70,7 +70,7 @@ private:
     void create_render_pass();
     void create_command_buffers();
     void update_uniform_buffers();
-    void output_result(char *imagedata);
+    void output_result(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     /* Helper methods */
     VkShaderModule create_shader_module(const std::vector<char> &code);

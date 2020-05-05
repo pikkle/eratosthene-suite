@@ -641,14 +641,14 @@ void Er_vk_engine::update_uniform_buffers() {
     vkUnmapMemory(er_device, er_uniform_buffer.mem);
 }
 
-void Er_vk_engine::draw_frame(char* imagedata) {
+void Er_vk_engine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
     update_uniform_buffers();
     submit_work(er_command_buffer, er_graphics_queue);
     vkDeviceWaitIdle(er_device);
-    output_result(imagedata);
+    output_result(imagedata, subresourceLayout);
 }
 
-void Er_vk_engine::output_result(char* imagedata) {
+void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
     VkImage copyImage;
     VkMemoryRequirements memRequirements;
     VkDeviceMemory dstImageMemory;
@@ -736,45 +736,16 @@ void Er_vk_engine::output_result(char* imagedata) {
     submit_work(copyCmd, er_transfer_queue);
 
     VkImageSubresource subResource{VK_IMAGE_ASPECT_COLOR_BIT};
-    VkSubresourceLayout subResourceLayout;
 
-    vkGetImageSubresourceLayout(er_device, copyImage, &subResource, &subResourceLayout);
+    vkGetImageSubresourceLayout(er_device, copyImage, &subResource, &subresourceLayout);
 
-    std::cout << memRequirements.size << " vs " << Er_vk_engine::er_imagedata_size  << std::endl;
     char *tmpdata;
     vkMapMemory(er_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
-    tmpdata += subResourceLayout.offset;
-
-    const char* filename = "headless.ppm";
-    std::ofstream file(filename, std::ios::out | std::ios::binary);
-
-    file << "P6\n" << WIDTH << "\n" << HEIGHT << "\n" << 255 << "\n";
-    for (int32_t y = 0; y < HEIGHT; y++) {
-        unsigned int *row = (unsigned int*)tmpdata;
-        for (int32_t x = 0; x < WIDTH; x++) {
-            file.write((char*)row, 3);
-            row++;
-        }
-        tmpdata += subResourceLayout.rowPitch;
-    }
-    file.close();
-//    memcpy(imagedata, tmpdata, er_imagedata_size);
-//
-//    for (int32_t y = 0; y < HEIGHT; y++) {
-//        unsigned int *row = (unsigned int*)imagedata;
-//        for (int32_t x = 0; x < WIDTH; x++) {
-//            std::cout.write((char*)row, 3);
-//            row++;
-//        }
-//        imagedata += subResourceLayout.rowPitch;
-//    }
+    memcpy(imagedata, tmpdata, er_imagedata_size);
 
     vkUnmapMemory(er_device, dstImageMemory);
     vkFreeMemory(er_device, dstImageMemory, nullptr);
     vkDestroyImage(er_device, copyImage, nullptr);
-
-
-
 
 }
 

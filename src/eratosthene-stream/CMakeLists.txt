@@ -6,7 +6,7 @@ find_package(glfw3 3.2 REQUIRED)
 find_package(Vulkan REQUIRED)
 
 # include head-files libraries
-include_directories(include)
+include_directories("include")
 add_subdirectory("include/seasocks")
 
 # pre compile shaders
@@ -29,6 +29,13 @@ set(HEADERS
         src/server.h
         )
 
+set(EXTERNAL_HEADERS
+        include/stb/stb_image.h
+        include/stb/stb_image_write.h
+        include/base64/base64.h
+        include/base64/base64.cpp
+        )
+
 set(SOURCES
         src/engine.cpp
         src/server.cpp
@@ -45,6 +52,7 @@ endforeach ()
 
 add_executable(
         eratosthene-stream
+        ${EXTERNAL_HEADERS}
         ${HEADERS}
         ${SOURCES}
         ${RESOURCES}

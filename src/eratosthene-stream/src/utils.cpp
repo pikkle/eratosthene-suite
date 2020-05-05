@@ -54,3 +54,13 @@ std::vector<char> readFile(const std::string& filename) {
     file.close();
     return buffer;
 }
+
+void encode_image(const char* data, size_t size, unsigned char *output) {
+    uint32_t bmp_header_size = sizeof(char) * 14;
+    uint32_t dib_header_size = sizeof(char) * 108;
+    uint32_t total_size = (bmp_header_size + dib_header_size + size);
+    output = (unsigned char*) malloc(sizeof(char) * total_size);
+    output[0] = 0x42; output[1] = 0x4D;
+    memcpy(&total_size, &output[2], 4);
+
+}

@@ -21,5 +21,6 @@ VkResult create_debug(VkInstance &instance, const VkDebugUtilsMessengerCreateInf
 void destroy_debug(VkInstance &instance, VkDebugUtilsMessengerEXT &debugMessenger, const VkAllocationCallbacks* pAllocator);
 bool check_validation_layers_support(const std::vector<const char *> &layers);
 std::vector<char> readFile(const std::string& filename);
+void encode_image(const char* imagedata, size_t datasize, unsigned char* output);
 
 #endif //ERATOSTHENE_STREAM_UTILS_H

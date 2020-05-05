@@ -31,5 +31,6 @@ ErStreamRendererHandler er_server_handler;
 void setup_server();
 void close_server();
 void broadcast_frame();
+void main_loop(er_connection connection);
 
 #endif //ERATOSTHENE_STREAM_SERVER_H

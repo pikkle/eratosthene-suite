@@ -22,5 +22,5 @@ socket.onopen = function(event) {
 
 let update_image = function(image_data) {
     let image_elem = document.getElementById("frame");
-    image_elem.src = "data:image/bmp;base64," + image_data;
+    image_elem.src = "data:image/jpg;base64," + image_data;
 }
