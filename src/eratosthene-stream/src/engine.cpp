@@ -636,8 +636,8 @@ void Er_vk_engine::update_uniform_buffers(float angle = 0.0f) {
     vkUnmapMemory(er_device, er_uniform_buffer.mem);
 }
 
-void Er_vk_engine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
-    update_uniform_buffers();
+void Er_vk_engine::draw_frame(float angle, char* imagedata, VkSubresourceLayout subresourceLayout) {
+    update_uniform_buffers(angle);
     submit_work(er_command_buffer, er_graphics_queue);
     vkDeviceWaitIdle(er_device);
     output_result(imagedata, subresourceLayout);

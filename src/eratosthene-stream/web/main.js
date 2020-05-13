@@ -4,6 +4,8 @@ socket.onerror = function(error) {
 }
 
 socket.onopen = function(event) {
+    console.log(event);
+    var s = this;
     console.log("Connection opened");
 
     this.onclose = function(event) {
@@ -12,12 +14,21 @@ socket.onopen = function(event) {
 
     this.onmessage = function(event) {
         console.log("Message received");
-        console.log(event.data);
         // @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
         update_image(event.data);
+        // this.close();
     }
 
-    this.send("Hello world");
+    document.addEventListener("keydown", function onPress(event) {
+        switch (event.key) {
+            case "ArrowLeft":
+                s.send(JSON.stringify({camera_rotate: -1}));
+                break;
+            case "ArrowRight":
+                s.send(JSON.stringify({camera_rotate: +1}));
+                break;
+        }
+    });
 }
 
 let update_image = function(image_data) {

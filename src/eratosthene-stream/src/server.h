@@ -11,6 +11,7 @@ const int STREAM_PORT = 8080;
 struct er_connection {
     Er_vk_engine *engine;
     bool running;
+    float angle = 0.0f;
 
     void close();
 };

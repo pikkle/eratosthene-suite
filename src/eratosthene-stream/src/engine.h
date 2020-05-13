@@ -18,7 +18,7 @@ class Er_vk_engine {
 public:
     Er_vk_engine();
     ~Er_vk_engine();
-    void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
+    void draw_frame(float angle, char *imagedata, VkSubresourceLayout subresourceLayout);
 
     static const size_t er_imagedata_size;
 

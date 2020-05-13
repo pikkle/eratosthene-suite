@@ -10,6 +10,8 @@
 
 #include <unistd.h>
 
+#include <nlohmann/json.hpp>
+
 int main() {
     setup_server();
 }
@@ -19,6 +21,7 @@ int main() {
 void setup_server() {
     er_logger = std::make_shared<seasocks::PrintfLogger>();
     er_server = new seasocks::Server(er_logger);
+    er_server->setPerMessageDeflateEnabled(true);
     er_server->addWebSocketHandler("/stream", std::make_shared<ErStreamRendererHandler>(er_server_handler));
     er_server->serve("web", STREAM_PORT);
 }
@@ -40,10 +43,16 @@ void ErStreamRendererHandler::onConnect(seasocks::WebSocket *socket) {
     std::thread t(main_loop, socket, &connection);
     t.detach();
 }
-
+float angle = 0;
 void ErStreamRendererHandler::onData(seasocks::WebSocket *socket, const char *data) {
     Handler::onData(socket, data);
-    // TODO: handle received data (controls over the camera and time modification)
+    auto j = nlohmann::json::parse(data);
+    for ( auto const& [s, connection] : er_open_connections ) {
+        if (s == socket) {
+            connection->angle += j["camera_rotate"].get<float>();
+            break;
+        }
+    }
 }
 
 void ErStreamRendererHandler::onDisconnect(seasocks::WebSocket *socket) {
@@ -74,7 +83,8 @@ void main_loop(seasocks::WebSocket *socket, er_connection *connection) {
     while (connection->running) {
         VkSubresourceLayout layout;
         char* imagedata = (char*) malloc(Er_vk_engine::er_imagedata_size);
-        connection->engine->draw_frame(imagedata, layout);
+        printf("angle : %f\n", connection->angle);
+        connection->engine->draw_frame(connection->angle, imagedata, layout);
 
         std::vector<uint8_t> encodedData;
         stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata, 70);
@@ -84,7 +94,7 @@ void main_loop(seasocks::WebSocket *socket, er_connection *connection) {
             if (connection->running)
                 socket->send(result);
         });
-        free(imagedata);
+//        free(imagedata);
     }
     er_logger->debug("Terminated rendering loop");
 
