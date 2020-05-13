@@ -69,7 +69,7 @@ private:
     void create_attachments();
     void create_render_pass();
     void create_command_buffers();
-    void update_uniform_buffers();
+    void update_uniform_buffers(float angle);
     void output_result(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     /* Helper methods */

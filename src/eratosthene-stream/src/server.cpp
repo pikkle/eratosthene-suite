@@ -6,6 +6,9 @@
 #include <base64/base64.h>
 
 #include <vector>
+#include <thread>
+
+#include <unistd.h>
 
 int main() {
     setup_server();
@@ -29,55 +32,62 @@ void encode_callback(void *context, void *data, int size) {
 }
 
 void ErStreamRendererHandler::onConnect(seasocks::WebSocket *socket) {
-    std::cout << ("New connection opened, creating engine instance...") << std::endl;
+    er_logger->info("New connection opened, creating engine instance...");
     auto *engine = new Er_vk_engine();
-    auto connection = new er_connection {socket, engine, true};
-    er_open_connections.insert(connection);
+    er_connection connection  {engine, true};
+    er_open_connections[socket] = &connection;
 
-    main_loop(*connection);
+    std::thread t(main_loop, socket, &connection);
+    t.detach();
 }
 
 void ErStreamRendererHandler::onData(seasocks::WebSocket *socket, const char *data) {
     Handler::onData(socket, data);
-    std::cout << "Message received from client: " << std::endl << data << std::endl;
     // TODO: handle received data (controls over the camera and time modification)
 }
 
 void ErStreamRendererHandler::onDisconnect(seasocks::WebSocket *socket) {
-//    auto set_it = er_open_connections.begin();
-//    while (set_it != er_open_connections.end()) {
-//        if ((*set_it)->socket == socket) {
-//            auto connection = er_open_connections.extract(set_it).value();
-//            connection->close();
-//        }
-//    }
+    for ( auto const& [s, connection] : er_open_connections ) {
+        if (s == socket) {
+            connection->close();
+            er_server_handler.er_open_connections.erase(s);
+            er_logger->info("Closed client connection (id : %x)", connection);
+            break;
+        }
+    }
 }
 
 void er_connection::close() {
+    er_logger->debug("Closing engine");
     running = false;
-    delete(engine);
-    socket->close();
 }
 
 void close_server() {
-    for (auto connection: er_server_handler.er_open_connections) {
-        connection->close();
+    for (auto & er_open_connection : er_server_handler.er_open_connections) {
+        er_open_connection.second->close();
+        er_open_connection.first->close();
     }
     er_server->terminate();
 }
 
-void main_loop(er_connection connection) {
-    while (connection.running) {
+void main_loop(seasocks::WebSocket *socket, er_connection *connection) {
+    while (connection->running) {
         VkSubresourceLayout layout;
         char* imagedata = (char*) malloc(Er_vk_engine::er_imagedata_size);
-        connection.engine->draw_frame(imagedata, layout);
+        connection->engine->draw_frame(imagedata, layout);
 
         std::vector<uint8_t> encodedData;
-        stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata, 50);
+        stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata, 70);
         auto b64 = base64_encode(encodedData.data(), encodedData.size());
-        connection.socket->send(b64.data());
+        auto result = b64.data();
+        er_server->execute([socket, &connection, result]{
+            if (connection->running)
+                socket->send(result);
+        });
         free(imagedata);
     }
+    er_logger->debug("Terminated rendering loop");
+
 }
 
 /* -------- End of broadcasting methods ------- */
