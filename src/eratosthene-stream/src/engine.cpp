@@ -622,7 +622,7 @@ void Er_vk_engine::create_descriptor_set() {
 
 /* --------- Vulkan rendering methods --------- */
 
-void Er_vk_engine::update_uniform_buffers(float angle = 0.0f) {
+void Er_vk_engine::update_uniform_buffers(Er_transform transform) {
     UniformBufferObject ubo = {
         .model = glm::rotate(glm::mat4(1.0f), angle * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
         .view = view,
@@ -636,8 +636,8 @@ void Er_vk_engine::update_uniform_buffers(float angle = 0.0f) {
     vkUnmapMemory(er_device, er_uniform_buffer.mem);
 }
 
-void Er_vk_engine::draw_frame(float angle, char* imagedata, VkSubresourceLayout subresourceLayout) {
-    update_uniform_buffers(angle);
+void Er_vk_engine::draw_frame(Er_transform transform, char* imagedata, VkSubresourceLayout subresourceLayout) {
+    update_uniform_buffers(transform);
     submit_work(er_command_buffer, er_graphics_queue);
     vkDeviceWaitIdle(er_device);
     output_result(imagedata, subresourceLayout);

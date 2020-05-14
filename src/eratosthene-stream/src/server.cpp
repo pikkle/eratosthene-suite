@@ -1,6 +1,5 @@
 #include "server.h"
 
-#include <seasocks/PrintfLogger.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image_write.h>
 #include <base64/base64.h>
@@ -16,15 +15,7 @@ int main() {
     setup_server();
 }
 
-/* ----------- Broadcasting methods ----------- */
-
-void setup_server() {
-    er_logger = std::make_shared<seasocks::PrintfLogger>();
-    er_server = new seasocks::Server(er_logger);
-    er_server->setPerMessageDeflateEnabled(true);
-    er_server->addWebSocketHandler("/stream", std::make_shared<ErStreamRendererHandler>(er_server_handler));
-    er_server->serve("web", STREAM_PORT);
-}
+/* -------------- Helper methods -------------- */
 
 void encode_callback(void *context, void *data, int size) {
     auto image = reinterpret_cast<std::vector<uint8_t>*>(context);
@@ -34,6 +25,47 @@ void encode_callback(void *context, void *data, int size) {
     }
 }
 
+/* ---------- End of helper methods ----------- */
+
+/* ----------- Broadcasting methods ----------- */
+
+void setup_server() {
+    // TODO: enable websocket deflate per message
+    ix::WebSocketServer er_server_ws(STREAM_PORT, STREAM_ADDRESS);
+    er_server_ws.setOnConnectionCallback(
+            [&er_server_ws](std::shared_ptr<ix::WebSocket> webSocket,
+                      std::shared_ptr<ix::ConnectionState> connectionState) {
+
+                std::cerr << "New connection" << std::endl;
+                auto engine = std::make_shared<Er_vk_engine>();
+                std::thread t(main_loop, webSocket, connectionState, engine);
+                t.detach();
+                webSocket->setOnMessageCallback([connectionState, engine](const ix::WebSocketMessagePtr &msg) {
+                    if (!connectionState->isTerminated() && msg->type == ix::WebSocketMessageType::Message) {
+                        std::cout << "Received message : " << msg->str << std::endl;
+                        // TODO: parse json
+                        // TODO: create transform of the scene to pass to the engine for further frames redraw
+                        // TODO: call engine->newTransform() or something
+                    }
+                });
+            }
+    );
+    auto res = er_server_ws.listen();
+    if (!res.first) {
+        // Error handling
+        std::cerr << res.second << std::endl;
+        exit(1);
+    }
+
+// Run the server in the background. Server can be stoped by calling server.stop()
+    er_server_ws.start();
+
+// Block until server.stop() is called.
+    er_server_ws.wait();
+}
+
+
+/*
 void ErStreamRendererHandler::onConnect(seasocks::WebSocket *socket) {
     er_logger->info("New connection opened, creating engine instance...");
     auto *engine = new Er_vk_engine();
@@ -99,6 +131,7 @@ void main_loop(seasocks::WebSocket *socket, er_connection *connection) {
     er_logger->debug("Terminated rendering loop");
 
 }
+ */
 
 /* -------- End of broadcasting methods ------- */
 

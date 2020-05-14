@@ -7,7 +7,7 @@ find_package(Vulkan REQUIRED)
 
 # include head-files libraries
 include_directories("include")
-add_subdirectory("include/seasocks")
+add_subdirectory("include/IXWebSocket")
 
 # pre compile shaders
 set(GLSL_COMPILER glslc)
@@ -60,4 +60,4 @@ add_executable(
         ${COMPILED_RESOURCES}
 )
 
-target_link_libraries(eratosthene-stream glfw ${GLFW_LIBRARIES} Vulkan::Vulkan seasocks)
+target_link_libraries(eratosthene-stream glfw ${GLFW_LIBRARIES} Vulkan::Vulkan ixwebsocket)

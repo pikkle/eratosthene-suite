@@ -4,9 +4,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <seasocks/Server.h>
-#include <seasocks/WebSocket.h>
-
 #include "models.h"
 #include "utils.h"
 
@@ -14,11 +11,20 @@ const int WIDTH = 800;
 const int HEIGHT = 600;
 const float FPS = 60.f;
 
+struct Er_transform {
+    float angle_x;
+
+    bool operator==(const Er_transform& other) const {
+        return false;
+    }
+
+};
+
 class Er_vk_engine {
 public:
     Er_vk_engine();
     ~Er_vk_engine();
-    void draw_frame(float angle, char *imagedata, VkSubresourceLayout subresourceLayout);
+    void draw_frame(Er_transform, char *imagedata, VkSubresourceLayout subresourceLayout);
 
     static const size_t er_imagedata_size;
 
@@ -59,6 +65,7 @@ private:
     BufferWrap er_lines_buffer;
     BufferWrap er_points_buffer;
     BufferWrap er_uniform_buffer;
+    Er_transform last_transform;
 
     void setup_debugger();
     void create_device();
@@ -69,7 +76,7 @@ private:
     void create_attachments();
     void create_render_pass();
     void create_command_buffers();
-    void update_uniform_buffers(float angle);
+    void update_uniform_buffers(Er_transform transform);
     void output_result(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     /* Helper methods */

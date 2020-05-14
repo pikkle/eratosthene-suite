@@ -18,7 +18,7 @@ socket.onopen = function(event) {
         update_image(event.data);
         // this.close();
     }
-
+     s.send("Hello world");
     document.addEventListener("keydown", function onPress(event) {
         switch (event.key) {
             case "ArrowLeft":
