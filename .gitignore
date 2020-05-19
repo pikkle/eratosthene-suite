@@ -11,3 +11,4 @@ lib/*/dev
 lib/*/doc/html
 lib/*/obj
 *.spv
+out

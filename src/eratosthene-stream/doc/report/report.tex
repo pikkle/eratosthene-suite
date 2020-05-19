@@ -1,80 +1,73 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%		My Thesis
-%
-%		EDOC Template
-%		2011
-%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[a4paper,11pt]{book}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[round]{natbib}
+\usepackage[french,english]{babel}
+\usepackage{graphicx}
+\usepackage{fourier}
+\usepackage{ragged2e}
+\usepackage{titlesec}
+\usepackage{lipsum} %TODO: remove after abstract
+\usepackage[title]{appendix}
+
+\titleformat{\chapter}[display]
+{\normalfont\bfseries}{}{0pt}{\Huge}
 
 
-\input{head/settings_epfl_template.tex}
-\input{head/settings_custom.tex}  % place your custom packages, etc... in this file!
+\setlength{\textwidth}{146.8mm} % = 210mm - 37mm - 26.2mm
+\setlength{\oddsidemargin}{11.6mm} % 37mm - 1in (from hoffset)
+\setlength{\evensidemargin}{0.8mm} % = 26.2mm - 1in (from hoffset)
+\setlength{\topmargin}{-2.2mm} % = 0mm -1in + 23.2mm
+\setlength{\textheight}{221.9mm} % = 297mm -29.5mm -31.6mm - 14mm (12 to accomodate footline with pagenumber)
+\setlength{\headheight}{14pt}
 
+\makeatletter\@openrightfalse\makeatother
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%% HEAD: Book-Begin
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \begin{document}
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{0pt} %(needs to be before titlepage and frontmatter to keep the table of contents lists short)
-\frontmatter
-\input{head/titlepage.tex}
-\include{head/dedication}
-\setcounter{page}{0}
-\include{head/acknowledgements}
-\include{head/preface}
-\include{head/abstracts}
+    \begin{titlepage}
+        \begin{otherlanguage}{french}
+            \begin{center}
 
-\cleardoublepage
-\pdfbookmark{\contentsname}{toc}
-\tableofcontents
+                \null\vspace{2cm}
+                {\Huge\textbf{
+                    Real-time Graphics Rendering \\[4pt]
+                    as a Distant Web Service \\[12pt]
+                    for Large 4-Dimensional Data
+                }}
+                \vspace{2cm}
 
-% % Following content is OPTIONAL (List of figures + tables)
-% \cleardoublepage
-% \phantomsection
-% \addcontentsline{toc}{chapter}{List of Figures} % adds an entry to the table of contents
-% \listoffigures
-% 
-% \cleardoublepage
-% \phantomsection
-% \addcontentsline{toc}{chapter}{List of Tables} % adds an entry to the table of contents
-% \listoftables
-% your list of symbols here, if needed.
+                \textbf{Abstract}
+                {\justify
+                \lipsum[1] %TODO: abstract
+                }
+                \vfill
 
+                \begin{tabular} {cc}
+                    \includegraphics[width=4cm]{images/epfl}\\
 
-% space before each new paragraph according to the template guidelines.
-%(needs to be after titlepage and frontmatter to keep the table of contents lists short)
-\setlength{\parskip}{1em}
+                    Student: Loïc Serafin\\
+                    Supervision : Frédéric Kaplan, Nils Hamel\\[10pt]
 
+                    Semester Project\\
+                    DHLab, IC School\\
+                    École Polytechnique Fédérale de Lausanne
+                \end{tabular}
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%% MAIN: The chapters of the thesis
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\mainmatter
-\include{main/ch1_introduction}
-\cleardoublepage
-\part{Body 1}
-\include{main/ch2_figures_tables}
-\cleardoublepage
-\part{Body 2}
-\include{main/ch3_math}
-\include{main/ch4_more_text}
+            \end{center}
+            \vspace{2cm}
+        \end{otherlanguage}
+    \end{titlepage}
 
-% use to end the last part if the thesis is composed of parts
-\addtocontents{toc}{\vspace{\normalbaselineskip}}
-\cleardoublepage
-\bookmarksetup{startatroot}
+    \tableofcontents
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%% TAIL: Bibliography, Appendix, CV
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\include{tail/appendix}
-\backmatter
-\include{tail/biblio}
-% Add your glossary here
-% Add your index here
-% Photographic credits (list of pictures&images that have been used with names of the person holding the copyright for them)
-\include{tail/cv}
+    \input{chapters/introduction}
+    \input{chapters/architecture}
+    \input{chapters/implementation}
+    \input{chapters/further_development}
+    \input{chapters/conclusion}
 
+    \begin{appendices}
+    \input{appendices/server_setup.tex}
+    \input{appendices/code_resources.tex}
+\end{appendices}
 \end{document}
