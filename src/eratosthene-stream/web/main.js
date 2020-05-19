@@ -18,14 +18,28 @@ socket.onopen = function(event) {
         update_image(event.data);
         // this.close();
     }
-     s.send("Hello world");
     document.addEventListener("keydown", function onPress(event) {
+        let transform = {
+            rotate_x : 0,
+            rotate_y : 0,
+            rotate_z : 0,
+        };
         switch (event.key) {
             case "ArrowLeft":
-                s.send(JSON.stringify({camera_rotate: -1}));
+                transform.rotate_z = +2;
+                s.send(JSON.stringify(transform));
                 break;
             case "ArrowRight":
-                s.send(JSON.stringify({camera_rotate: +1}));
+                transform.rotate_z = -2;
+                s.send(JSON.stringify(transform));
+                break;
+            case "ArrowUp":
+                transform.rotate_x = -2;
+                s.send(JSON.stringify(transform));
+                break;
+            case "ArrowDown":
+                transform.rotate_x = +2;
+                s.send(JSON.stringify(transform));
                 break;
         }
     });

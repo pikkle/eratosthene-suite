@@ -30,22 +30,35 @@ void encode_callback(void *context, void *data, int size) {
 /* ----------- Broadcasting methods ----------- */
 
 void setup_server() {
-    // TODO: enable websocket deflate per message
+    // @TODO: enable websocket deflate per message
     ix::WebSocketServer er_server_ws(STREAM_PORT, STREAM_ADDRESS);
+
+    // server main loop to allow connections
     er_server_ws.setOnConnectionCallback(
             [&er_server_ws](std::shared_ptr<ix::WebSocket> webSocket,
                       std::shared_ptr<ix::ConnectionState> connectionState) {
+                // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
 
-                std::cerr << "New connection" << std::endl;
+                // create a private engine for this new connection
                 auto engine = std::make_shared<Er_vk_engine>();
+
+                // client renderer in a new thread
                 std::thread t(main_loop, webSocket, connectionState, engine);
                 t.detach();
+
+                // handle client messages (commands to transform the view)
                 webSocket->setOnMessageCallback([connectionState, engine](const ix::WebSocketMessagePtr &msg) {
                     if (!connectionState->isTerminated() && msg->type == ix::WebSocketMessageType::Message) {
-                        std::cout << "Received message : " << msg->str << std::endl;
-                        // TODO: parse json
-                        // TODO: create transform of the scene to pass to the engine for further frames redraw
-                        // TODO: call engine->newTransform() or something
+                        // parse json
+                        auto j = nlohmann::json::parse(msg.get()->str.data());
+                        // @TODO check that json is transform-consistent
+
+                        // create transform of the scene to pass to the engine for further frames redraw
+                        Er_transform new_transform = engine->get_transform();
+                        new_transform.rotate_x = new_transform.rotate_x + (float) j["rotate_x"];
+                        new_transform.rotate_y = new_transform.rotate_y + (float) j["rotate_y"];
+                        new_transform.rotate_z = new_transform.rotate_z + (float) j["rotate_z"];
+                        engine->set_transform(new_transform);
                     }
                 });
             }
@@ -53,7 +66,7 @@ void setup_server() {
     auto res = er_server_ws.listen();
     if (!res.first) {
         // Error handling
-        std::cerr << res.second << std::endl;
+        std::cerr << "ERROR: " << res.second << std::endl;
         exit(1);
     }
 
@@ -64,74 +77,41 @@ void setup_server() {
     er_server_ws.wait();
 }
 
+void main_loop(std::shared_ptr<ix::WebSocket> webSocket,
+               std::shared_ptr<ix::ConnectionState> connectionState,
+               std::shared_ptr<Er_vk_engine> engine) {
+    Er_transform last_transform = {.rotate_z =  0.0f};
+    engine->set_transform(last_transform);
+    bool drew_once = false;
 
-/*
-void ErStreamRendererHandler::onConnect(seasocks::WebSocket *socket) {
-    er_logger->info("New connection opened, creating engine instance...");
-    auto *engine = new Er_vk_engine();
-    er_connection connection  {engine, true};
-    er_open_connections[socket] = &connection;
+    while (!connectionState->isTerminated()) {
+        // only draw new image if it has been modified since last draw
+        if (engine->get_transform() != last_transform || !drew_once) {
+            drew_once = true;
+            last_transform = engine->get_transform();
+            // prepare memory for image
+            VkSubresourceLayout layout;
+            char* imagedata = (char*) malloc(Er_vk_engine::er_imagedata_size);
 
-    std::thread t(main_loop, socket, &connection);
-    t.detach();
-}
-float angle = 0;
-void ErStreamRendererHandler::onData(seasocks::WebSocket *socket, const char *data) {
-    Handler::onData(socket, data);
-    auto j = nlohmann::json::parse(data);
-    for ( auto const& [s, connection] : er_open_connections ) {
-        if (s == socket) {
-            connection->angle += j["camera_rotate"].get<float>();
-            break;
+            // render the image and output it to memory
+            engine->draw_frame(imagedata, layout);
+
+            // encode image for web
+            std::vector<uint8_t> encodedData;
+            stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata, 100);
+            auto b64 = base64_encode(encodedData.data(), encodedData.size());
+            auto result = b64.data();
+
+            // send image data to client
+            webSocket->send(result);
+
+            // cleanup
+            free(imagedata);
+        } else {
+            usleep(1000);
         }
     }
 }
-
-void ErStreamRendererHandler::onDisconnect(seasocks::WebSocket *socket) {
-    for ( auto const& [s, connection] : er_open_connections ) {
-        if (s == socket) {
-            connection->close();
-            er_server_handler.er_open_connections.erase(s);
-            er_logger->info("Closed client connection (id : %x)", connection);
-            break;
-        }
-    }
-}
-
-void er_connection::close() {
-    er_logger->debug("Closing engine");
-    running = false;
-}
-
-void close_server() {
-    for (auto & er_open_connection : er_server_handler.er_open_connections) {
-        er_open_connection.second->close();
-        er_open_connection.first->close();
-    }
-    er_server->terminate();
-}
-
-void main_loop(seasocks::WebSocket *socket, er_connection *connection) {
-    while (connection->running) {
-        VkSubresourceLayout layout;
-        char* imagedata = (char*) malloc(Er_vk_engine::er_imagedata_size);
-        printf("angle : %f\n", connection->angle);
-        connection->engine->draw_frame(connection->angle, imagedata, layout);
-
-        std::vector<uint8_t> encodedData;
-        stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata, 70);
-        auto b64 = base64_encode(encodedData.data(), encodedData.size());
-        auto result = b64.data();
-        er_server->execute([socket, &connection, result]{
-            if (connection->running)
-                socket->send(result);
-        });
-//        free(imagedata);
-    }
-    er_logger->debug("Terminated rendering loop");
-
-}
- */
 
 /* -------- End of broadcasting methods ------- */
 

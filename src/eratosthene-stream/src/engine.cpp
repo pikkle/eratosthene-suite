@@ -413,7 +413,7 @@ void Er_vk_engine::create_pipeline() {
         .flags = 0,
         .depthClampEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_FRONT_BIT,
+        .cullMode = VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .lineWidth = 1.0f,
     };
@@ -622,9 +622,21 @@ void Er_vk_engine::create_descriptor_set() {
 
 /* --------- Vulkan rendering methods --------- */
 
-void Er_vk_engine::update_uniform_buffers(Er_transform transform) {
+
+Er_transform Er_vk_engine::get_transform() {
+    return er_transform;
+}
+
+
+void Er_vk_engine::set_transform(Er_transform transform) {
+    this->er_transform = transform;
+}
+
+void Er_vk_engine::update_uniform_buffers() {
     UniformBufferObject ubo = {
-        .model = glm::rotate(glm::mat4(1.0f), angle * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+        .model = glm::rotate(glm::mat4(1.0f), glm::radians(er_transform.rotate_x), glm::vec3(1.0f, 0.0f, 0.0f))
+                * glm::rotate(glm::mat4(1.0f), glm::radians(er_transform.rotate_y), glm::vec3(0.0f, 1.0f, 0.0f))
+                * glm::rotate(glm::mat4(1.0f), glm::radians(er_transform.rotate_z), glm::vec3(0.0f, 0.0f, 1.0f)),
         .view = view,
         .proj = glm::perspective(glm::radians(45.0f), WIDTH / (float) HEIGHT, 0.1f, 256.0f),
     };
@@ -636,8 +648,8 @@ void Er_vk_engine::update_uniform_buffers(Er_transform transform) {
     vkUnmapMemory(er_device, er_uniform_buffer.mem);
 }
 
-void Er_vk_engine::draw_frame(Er_transform transform, char* imagedata, VkSubresourceLayout subresourceLayout) {
-    update_uniform_buffers(transform);
+void Er_vk_engine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
+    update_uniform_buffers();
     submit_work(er_command_buffer, er_graphics_queue);
     vkDeviceWaitIdle(er_device);
     output_result(imagedata, subresourceLayout);

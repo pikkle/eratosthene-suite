@@ -12,10 +12,18 @@ const int HEIGHT = 600;
 const float FPS = 60.f;
 
 struct Er_transform {
-    float angle_x;
+    float rotate_x;
+    float rotate_y;
+    float rotate_z;
 
-    bool operator==(const Er_transform& other) const {
-        return false;
+    bool operator==(const Er_transform &other) const {
+        return rotate_x == other.rotate_x &&
+               rotate_y == other.rotate_y &&
+               rotate_z == other.rotate_z;
+    }
+
+    bool operator!=(const Er_transform& other) const {
+        return !(*this == other);
     }
 
 };
@@ -24,7 +32,9 @@ class Er_vk_engine {
 public:
     Er_vk_engine();
     ~Er_vk_engine();
-    void draw_frame(Er_transform, char *imagedata, VkSubresourceLayout subresourceLayout);
+    void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
+    void set_transform(Er_transform transform);
+    Er_transform get_transform();
 
     static const size_t er_imagedata_size;
 
@@ -65,7 +75,7 @@ private:
     BufferWrap er_lines_buffer;
     BufferWrap er_points_buffer;
     BufferWrap er_uniform_buffer;
-    Er_transform last_transform;
+    Er_transform er_transform;
 
     void setup_debugger();
     void create_device();
@@ -76,7 +86,7 @@ private:
     void create_attachments();
     void create_render_pass();
     void create_command_buffers();
-    void update_uniform_buffers(Er_transform transform);
+    void update_uniform_buffers();
     void output_result(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     /* Helper methods */
