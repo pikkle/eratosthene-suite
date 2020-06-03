@@ -8,21 +8,31 @@
 #include "utils.h"
 
 typedef const std::vector<Vertex> Vertices;
-typedef const std::vector<uint16_t> Indices;
+typedef const std::vector<uint32_t> Indices;
 
-const int WIDTH = 800;
-const int HEIGHT = 600;
+const int WIDTH = 1600;
+const int HEIGHT = 1200;
 const float FPS = 60.f;
 
 struct Er_transform {
-    float rotate_x;
-    float rotate_y;
-    float rotate_z;
+    float rotate_x = 0.f;
+    float rotate_y = 0.f;
+    float rotate_z = 0.f;
+
+    float translate_camera_x = 0.f;
+    float translate_camera_y = 0.f;
+    float translate_camera_z = 0.f;
+
+    float zoom = 0.f;
 
     bool operator==(const Er_transform &other) const {
         return rotate_x == other.rotate_x &&
                rotate_y == other.rotate_y &&
-               rotate_z == other.rotate_z;
+               rotate_z == other.rotate_z &&
+               translate_camera_x == other.translate_camera_x &&
+               translate_camera_y == other.translate_camera_y &&
+               translate_camera_z == other.translate_camera_z &&
+               zoom == other.zoom;
     }
 
     bool operator!=(const Er_transform& other) const {
@@ -33,7 +43,7 @@ struct Er_transform {
 
 class Er_vk_engine {
 public:
-    Er_vk_engine(Vertices v, Indices t, Indices l, Indices p);
+    Er_vk_engine(Vertices &v, Indices &t, Indices &l, Indices &p);
     ~Er_vk_engine();
     void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
     void set_transform(Er_transform transform);
