@@ -9,7 +9,7 @@
 const char* STREAM_ADDRESS = "127.0.0.1";
 const int STREAM_PORT = 8080;
 
-void setup_server();
+void setup_server(Vertices v, Indices t, Indices l, Indices p);
 void close_server();
 
 void main_loop(std::shared_ptr<ix::WebSocket> webSocket,

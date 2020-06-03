@@ -7,6 +7,9 @@
 #include "models.h"
 #include "utils.h"
 
+typedef const std::vector<Vertex> Vertices;
+typedef const std::vector<uint16_t> Indices;
+
 const int WIDTH = 800;
 const int HEIGHT = 600;
 const float FPS = 60.f;
@@ -30,7 +33,7 @@ struct Er_transform {
 
 class Er_vk_engine {
 public:
-    Er_vk_engine();
+    Er_vk_engine(Vertices v, Indices t, Indices l, Indices p);
     ~Er_vk_engine();
     void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
     void set_transform(Er_transform transform);
@@ -46,6 +49,9 @@ private:
 
     static void create_instance();
     static void create_phys_device();
+
+    Vertices er_data_vertices;
+    Indices er_data_triangles, er_data_lines, er_data_points;
 
     VkDevice er_device;
     VkDebugReportCallbackEXT er_debug_report;

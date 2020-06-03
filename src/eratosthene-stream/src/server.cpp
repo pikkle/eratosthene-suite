@@ -11,11 +11,53 @@
 
 #include <nlohmann/json.hpp>
 
-int main() {
-    setup_server();
+Vertices debug_vertices = {
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+
+        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+
+        {{-0.6f, -0.6f, -0.6f}, {0.0f, 0.0f, 1.0f}},
+        {{0.6f, 0.6f, 0.6f}, {0.0f, 1.0f, 0.0f}},
+
+        {{0.7f, 0.7f, 0.7f}, {1.0f, 1.0f, 1.0f}},
+};
+
+Indices debug_triangles = {
+        0, 1, 2, 2, 3, 0,
+        4, 5, 6, 6, 7, 4,
+};
+
+Indices debug_lines = {
+        8, 9,
+};
+
+Indices debug_points = {
+        10,
+};
+
+int main(int argc, char **argv) {
+    if (argc == 1) {
+        setup_server(debug_vertices, debug_triangles, debug_lines, debug_points);
+    } else if (argc == 2) {
+
+    } else {
+        printf("Program usage:\n\t > eratosthene-stream [\"path/to/plyfile\"]\n");
+        printf("If no ply file is given as an argument, the application will run with debug data to display on the application.\n");
+        exit(-1);
+    }
 }
 
 /* -------------- Helper methods -------------- */
+
+void load_ply_data(const char* path, Vertices &v) {
+
+}
 
 void encode_callback(void *context, void *data, int size) {
     auto image = reinterpret_cast<std::vector<uint8_t>*>(context);
@@ -29,18 +71,18 @@ void encode_callback(void *context, void *data, int size) {
 
 /* ----------- Broadcasting methods ----------- */
 
-void setup_server() {
+void setup_server(Vertices v, Indices t, Indices l, Indices p) {
     // @TODO: enable websocket deflate per message
     ix::WebSocketServer er_server_ws(STREAM_PORT, STREAM_ADDRESS);
 
     // server main loop to allow connections
     er_server_ws.setOnConnectionCallback(
-            [&er_server_ws](std::shared_ptr<ix::WebSocket> webSocket,
+            [&er_server_ws, &v, &t, &l, &p](std::shared_ptr<ix::WebSocket> webSocket,
                       std::shared_ptr<ix::ConnectionState> connectionState) {
                 // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
 
                 // create a private engine for this new connection
-                auto engine = std::make_shared<Er_vk_engine>();
+                auto engine = std::make_shared<Er_vk_engine>(v, t, l, p);
 
                 // client renderer in a new thread
                 std::thread t(main_loop, webSocket, connectionState, engine);

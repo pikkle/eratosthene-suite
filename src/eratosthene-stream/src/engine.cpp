@@ -34,35 +34,7 @@ glm::mat4x4 view = glm::lookAt(
         glm::vec3(0.0f, 0.0f, 1.0f) // up
 );
 
-const std::vector<Vertex> debug_vertices = {
-        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
 
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-
-        {{-0.6f, -0.6f, -0.6f}, {0.0f, 0.0f, 1.0f}},
-        {{0.6f, 0.6f, 0.6f}, {0.0f, 1.0f, 0.0f}},
-
-        {{0.7f, 0.7f, 0.7f}, {1.0f, 1.0f, 1.0f}},
-};
-
-const std::vector<uint16_t> debug_triangles = {
-        0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4,
-};
-
-const std::vector<uint16_t> debug_lines = {
-        8, 9,
-};
-
-const std::vector<uint16_t> debug_points = {
-        10,
-};
 /* ------------- End of debug data ------------- */
 
 
@@ -73,7 +45,8 @@ VkPhysicalDevice Er_vk_engine::er_phys_device = nullptr;
 const size_t Er_vk_engine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
 
 
-Er_vk_engine::Er_vk_engine() {
+Er_vk_engine::Er_vk_engine(Vertices v, Indices t, Indices l, Indices p)
+: er_data_vertices(v), er_data_triangles(t), er_data_lines(l), er_data_points(p) {
     if (!Er_vk_engine::er_instance && !er_phys_device) {
         create_instance();
         create_phys_device();
@@ -225,47 +198,55 @@ void Er_vk_engine::create_command_pool() {
 
 void Er_vk_engine::bind_data() {
     BufferWrap stagingWrap;
-    VkDeviceSize vertexBufferSize = debug_vertices.size() * sizeof(Vertex);
-    VkDeviceSize triangleBufferSize = debug_triangles.size() * sizeof(uint16_t);
-    VkDeviceSize lineBufferSize = debug_lines.size() * sizeof(uint16_t);
-    VkDeviceSize pointBufferSize = debug_points.size() * sizeof(uint16_t);
+    VkDeviceSize vertexBufferSize = er_data_vertices.size() * sizeof(Vertex);
+    VkDeviceSize triangleBufferSize = er_data_triangles.size() * sizeof(uint16_t);
+    VkDeviceSize lineBufferSize = er_data_lines.size() * sizeof(uint16_t);
+    VkDeviceSize pointBufferSize = er_data_points.size() * sizeof(uint16_t);
 
     // Vertices
-    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &stagingWrap, vertexBufferSize, (void *) debug_vertices.data());
-    create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                  &er_vertices_buffer, vertexBufferSize);
-    bind_memory(vertexBufferSize, stagingWrap, er_vertices_buffer);
+    if (vertexBufferSize > 0) {
+        create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      &stagingWrap, vertexBufferSize, (void *) er_data_vertices.data());
+        create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                      &er_vertices_buffer, vertexBufferSize);
+        bind_memory(vertexBufferSize, stagingWrap, er_vertices_buffer);
+    }
 
 
     // Triangles
-    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &stagingWrap, triangleBufferSize, (void *) debug_triangles.data());
-    create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                  &er_triangles_buffer, triangleBufferSize);
-    bind_memory(triangleBufferSize, stagingWrap, er_triangles_buffer);
+    if (triangleBufferSize > 0) {
+        create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      &stagingWrap, triangleBufferSize, (void *) er_data_triangles.data());
+        create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                      &er_triangles_buffer, triangleBufferSize);
+        bind_memory(triangleBufferSize, stagingWrap, er_triangles_buffer);
+    }
 
     // Lines
-    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &stagingWrap, lineBufferSize, (void *) debug_lines.data());
-    create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                  &er_lines_buffer, lineBufferSize);
-    bind_memory(lineBufferSize, stagingWrap, er_lines_buffer);
+    if (lineBufferSize > 0) {
+        create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      &stagingWrap, lineBufferSize, (void *) er_data_lines.data());
+        create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                      &er_lines_buffer, lineBufferSize);
+        bind_memory(lineBufferSize, stagingWrap, er_lines_buffer);
+    }
 
     // Points
-    create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &stagingWrap, pointBufferSize, (void *) debug_points.data());
-    create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                  &er_points_buffer, pointBufferSize);
-    bind_memory(pointBufferSize, stagingWrap, er_points_buffer);
+    if (pointBufferSize > 0) {
+        create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      &stagingWrap, pointBufferSize, (void *) er_data_points.data());
+        create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                      &er_points_buffer, pointBufferSize);
+        bind_memory(pointBufferSize, stagingWrap, er_points_buffer);
+    }
 }
 
 void Er_vk_engine::create_attachments() {
@@ -497,14 +478,21 @@ void Er_vk_engine::create_pipeline() {
         .basePipelineIndex = -1,
     };
 
-    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline_triangles), "error while creating triangles pipeline");
-
-    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline_lines), "error while creating lines pipeline");
-
-    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-    TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr, &er_pipeline_points), "error while creating points pipeline");
+    if (!er_data_triangles.empty()) {
+        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+                                                 &er_pipeline_triangles), "error while creating triangles pipeline");
+    }
+    if (!er_data_lines.empty()) {
+        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+                                                 &er_pipeline_lines), "error while creating lines pipeline");
+    }
+    if (!er_data_points.empty()) {
+        inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+                                                 &er_pipeline_points), "error while creating points pipeline");
+    }
 
     for (auto stage : shaderStages) {
         vkDestroyShaderModule(er_device, stage.module, nullptr);
@@ -554,17 +542,21 @@ void Er_vk_engine::create_command_buffers() {
     vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set, 0, nullptr);
     vkCmdBindVertexBuffers(er_command_buffer, 0, 1, vertexBuffers, offsets);
 
-    vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_triangles);
-    vkCmdBindIndexBuffer(er_command_buffer, er_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(er_command_buffer, debug_triangles.size(), 1, 0, 0, 0);
-
-    vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_lines);
-    vkCmdBindIndexBuffer(er_command_buffer, er_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(er_command_buffer, debug_lines.size(), 1, 0, 0, 0);
-
-    vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_points);
-    vkCmdBindIndexBuffer(er_command_buffer, er_points_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(er_command_buffer, debug_points.size(), 1, 0, 0, 0);
+    if (!er_data_triangles.empty()) {
+        vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_triangles);
+        vkCmdBindIndexBuffer(er_command_buffer, er_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(er_command_buffer, er_data_triangles.size(), 1, 0, 0, 0);
+    }
+    if (!er_data_lines.empty()) {
+        vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_lines);
+        vkCmdBindIndexBuffer(er_command_buffer, er_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(er_command_buffer, er_data_lines.size(), 1, 0, 0, 0);
+    }
+    if (!er_data_points.empty()) {
+        vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_points);
+        vkCmdBindIndexBuffer(er_command_buffer, er_points_buffer.buf, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdDrawIndexed(er_command_buffer, er_data_points.size(), 1, 0, 0, 0);
+    }
 
     vkCmdEndRenderPass(er_command_buffer);
 
