@@ -6,7 +6,7 @@ let connect = function() {
     // if (socket.CLOSED) {
     //     document.getElementById("connectButton").disabled = false;
     // }
-    let factor = 1.0;
+    let factor = 0.5;
 
     socket.onerror = function(error) {
         console.error(error);

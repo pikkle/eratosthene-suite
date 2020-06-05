@@ -10,7 +10,6 @@
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <fstream>
 
 #include "engine.h"
 
@@ -25,19 +24,6 @@ const std::vector<const char *> validation_layers = {
 const std::vector<const char *> extensions = {
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 };
-
-/* --------------- Debug data --------------- */
-
-auto defaultViewEye = glm::vec3(0.0f, 0.0f, 1.0f);
-auto defaultViewCenter = glm::vec3(0.0f, 0.0f, 0.0f);
-auto defaultViewUp = glm::vec3(0.0f, 0.0f, 1.0f);
-
-auto Ix = glm::vec3(1.f, 0.f, 0.f);
-auto Iy = glm::vec3(0.f, 1.f, 0.f);
-auto Iz = glm::vec3(0.f, 0.f, 1.f);
-
-/* ------------- End of debug data ------------- */
-
 
 /* ----------- Vulkan setup methods ------------ */
 
