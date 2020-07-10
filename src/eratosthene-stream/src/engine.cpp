@@ -32,8 +32,7 @@ VkPhysicalDevice Er_vk_engine::er_phys_device = nullptr;
 const size_t Er_vk_engine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
 
 
-Er_vk_engine::Er_vk_engine(Vertices &v, Indices &t, Indices &l, Indices &p) :
-er_data_vertices(v), er_data_triangles(t), er_data_lines(l), er_data_points(p) {
+Er_vk_engine::Er_vk_engine(const char * const data_server_ip, int data_server_port) {
     if (!Er_vk_engine::er_instance && !er_phys_device) {
         create_instance();
         create_phys_device();
@@ -606,22 +605,10 @@ void Er_vk_engine::create_descriptor_set() {
 
 /* --------- Vulkan rendering methods --------- */
 
-Er_transform Er_vk_engine::get_transform() {
-    return er_transform;
-}
-
-void Er_vk_engine::set_transform(Er_transform transform) {
-    this->er_transform = transform;
-}
-
 void Er_vk_engine::update_uniform_buffers() {
     auto eye = glm::vec3(-2.f, -2.f, 2.5f);
     auto center = glm::vec3(0.0f, 0.0f, 1.f);
-    auto zoomF = glm::normalize(center-eye) * er_transform.zoom / 10.f;
-    eye += zoomF;
-    auto rotation = glm::rotate(glm::mat4(1.0f), glm::radians(er_transform.rotate_x), glm::vec3(1.0f, 0.0f, 0.0f))
-                    * glm::rotate(glm::mat4(1.0f), glm::radians(er_transform.rotate_y), glm::vec3(0.0f, 1.0f, 0.0f))
-                    * glm::rotate(glm::mat4(1.0f), glm::radians(180 + er_transform.rotate_z), glm::vec3(0.0f, 0.0f, 1.0f));
+    auto rotation = glm::rotate(glm::mat4(1.0f), glm::radians(0.f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     UniformBufferObject ubo = {
             .model = rotation,

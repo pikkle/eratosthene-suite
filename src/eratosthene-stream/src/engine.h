@@ -4,6 +4,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <eratosthene-client-model.h>
+#include <eratosthene-client-view.h>
+
 #include "models.h"
 #include "utils.h"
 
@@ -14,40 +17,11 @@ const int WIDTH = 1600;
 const int HEIGHT = 1200;
 const float FPS = 60.f;
 
-struct Er_transform {
-    float rotate_x = 0.f;
-    float rotate_y = 0.f;
-    float rotate_z = 0.f;
-
-    float translate_camera_x = 0.f;
-    float translate_camera_y = 0.f;
-    float translate_camera_z = 0.f;
-
-    float zoom = 0.f;
-
-    bool operator==(const Er_transform &other) const {
-        return rotate_x == other.rotate_x &&
-               rotate_y == other.rotate_y &&
-               rotate_z == other.rotate_z &&
-               translate_camera_x == other.translate_camera_x &&
-               translate_camera_y == other.translate_camera_y &&
-               translate_camera_z == other.translate_camera_z &&
-               zoom == other.zoom;
-    }
-
-    bool operator!=(const Er_transform& other) const {
-        return !(*this == other);
-    }
-
-};
-
 class Er_vk_engine {
 public:
-    Er_vk_engine(Vertices &v, Indices &t, Indices &l, Indices &p);
+    Er_vk_engine(const char * data_server_ip, int data_server_port);
     ~Er_vk_engine();
     void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
-    void set_transform(Er_transform transform);
-    Er_transform get_transform();
 
     static const size_t er_imagedata_size;
 
@@ -59,6 +33,9 @@ private:
 
     static void create_instance();
     static void create_phys_device();
+
+    le_sock_t socket;
+
 
     Vertices er_data_vertices;
     Indices er_data_triangles, er_data_lines, er_data_points;
@@ -91,7 +68,6 @@ private:
     BufferWrap er_lines_buffer;
     BufferWrap er_points_buffer;
     BufferWrap er_uniform_buffer;
-    Er_transform er_transform;
 
     void setup_debugger();
     void create_device();

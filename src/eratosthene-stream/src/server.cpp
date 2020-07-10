@@ -45,26 +45,51 @@ Indices debug_points = {
 
 Indices empty = {};
 
-int main(int argc, char **argv) {
-    if (argc == 1) {
-        setup_server(debug_vertices, debug_triangles, debug_lines, debug_points);
-    } else if (argc == 2 || argc == 3) {
-        std::string path(argv[1]);
-        auto v = load_ply_data(path);
-        std::vector<uint32_t> points(v.size());
-        std::generate(points.begin(), points.end(), [n = 0] () mutable { return n++; });
+const char * usage_message = "Usage:\n"
+                             "  $ eratosthene-stream [PARAMETERS]\n"
+                             "Parameters:\n"
+                             "  \x1b[1m-h\x1b[0m                 Displays this message\n"
+                             "  \x1b[1m-s\x1b[0m STREAM_PORT     The port on which the stream server should run (mandatory)\n"
+                             "  \x1b[1m-d\x1b[0m DATA_SERVER_IP  The data server to which the stream server should fetch the data (mandatory)\n";
 
-        if (argc == 2)
-            setup_server(v, empty, empty, points);
-        else
-            setup_server(v, empty, empty, points, atoi(argv[2]));
-    } else {
-        printf("Program usage:\n\t > eratosthene-stream [\"path/to/plyfile\"]\n");
-        printf("If no ply file is given as an argument, the application will run with debug data to display on the application.\n");
+int main(int argc, char **argv) {
+    int args;
+    char *data_server_ip = nullptr;
+    int data_server_port = 0;
+    int stream_port = 0;
+    while ((args = getopt(argc, argv, "s:d:p:h")) != -1) {
+        switch (args) {
+            case 's':
+                stream_port = atoi(optarg);
+                break;
+            case 'd':
+                data_server_ip = optarg;
+                break;
+            case 'p':
+                data_server_port = atoi(optarg);
+                break;
+            case 'h':
+                std::cout << usage_message << std::endl;
+                return 0;
+            case '?':
+                if (optopt == 's' || optopt == 'd' || optopt == 'p') {
+                    std::cerr << "Option " << optopt << " requires an argument" << std::endl;
+                } else {
+                    std::cerr << "Unknown option -" << optopt << std::endl;
+                }
+                std::cerr << usage_message << std::endl;
+                return -1;
+        }
+    }
+
+    if (!stream_port || !data_server_ip || !data_server_port) {
+        std::cerr << "Missing arguments." << std::endl;
+        std::cerr << usage_message << std::endl;
         exit(-1);
     }
-}
 
+    setup_server(stream_port, data_server_ip, data_server_port);
+}
 /* -------------- Helper methods -------------- */
 
 void split(const std::string& s, char c, std::vector<std::string>& v) {
@@ -115,18 +140,18 @@ void encode_callback(void *context, void *data, int size) {
 
 /* ----------- Broadcasting methods ----------- */
 
-void setup_server(Vertices v, Indices t, Indices l, Indices p, int server_port) {
+void setup_server(int server_port, const char * data_server_ip, int data_server_port) {
     // @TODO: enable websocket deflate per message
     ix::WebSocketServer er_server_ws(server_port, STREAM_ADDRESS);
     std::cout << "Listening on " << server_port << std::endl;
     // server main loop to allow connections
     er_server_ws.setOnConnectionCallback(
-            [&er_server_ws, v, t, l, p](std::shared_ptr<ix::WebSocket> webSocket,
+            [&er_server_ws, data_server_ip, data_server_port](std::shared_ptr<ix::WebSocket> webSocket,
                       std::shared_ptr<ix::ConnectionState> connectionState) {
                 // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
 
                 // create a private engine for this new connection
-                auto engine = std::make_shared<Er_vk_engine>(v, t, l, p);
+                auto engine = std::make_shared<Er_vk_engine>(data_server_ip, data_server_port);
 
                 // client renderer in a new thread
                 std::thread t(main_loop, webSocket, connectionState, engine);
@@ -141,16 +166,16 @@ void setup_server(Vertices v, Indices t, Indices l, Indices p, int server_port) 
                             // @TODO check that json is transform-consistent
 
                             // create transform of the scene to pass to the engine for further frames redraw
-                            Er_transform new_transform = engine->get_transform();
-
-                            new_transform.rotate_x += (float) j["rotate_x"];
-                            new_transform.rotate_y += (float) j["rotate_y"];
-                            new_transform.rotate_z += (float) j["rotate_z"];
-                            new_transform.translate_camera_x += (float) j["translate_camera_x"];
-                            new_transform.translate_camera_y += (float) j["translate_camera_y"];
-                            new_transform.translate_camera_z += (float) j["translate_camera_z"];
-                            new_transform.zoom += (float) j["zoom"];
-                            engine->set_transform(new_transform);
+//                            Er_transform new_transform = engine->get_transform();
+//
+//                            new_transform.rotate_x += (float) j["rotate_x"];
+//                            new_transform.rotate_y += (float) j["rotate_y"];
+//                            new_transform.rotate_z += (float) j["rotate_z"];
+//                            new_transform.translate_camera_x += (float) j["translate_camera_x"];
+//                            new_transform.translate_camera_y += (float) j["translate_camera_y"];
+//                            new_transform.translate_camera_z += (float) j["translate_camera_z"];
+//                            new_transform.zoom += (float) j["zoom"];
+//                            engine->set_transform(new_transform);
                         } catch (std::exception &e) {
                             std::cerr << "Got a malformed json object :" << std::endl << msg.get()->str << std::endl;
                         }
@@ -175,15 +200,15 @@ void setup_server(Vertices v, Indices t, Indices l, Indices p, int server_port) 
 void main_loop(std::shared_ptr<ix::WebSocket> webSocket,
                std::shared_ptr<ix::ConnectionState> connectionState,
                std::shared_ptr<Er_vk_engine> engine) {
-    Er_transform last_transform = {.rotate_z =  0.0f};
-    engine->set_transform(last_transform);
+//    Er_transform last_transform = {.rotate_z =  0.0f};
+//    engine->set_transform(last_transform);
     bool drew_once = false;
 
     while (!connectionState->isTerminated()) {
         // only draw new image if it has been modified since last draw
-        if (engine->get_transform() != last_transform || !drew_once) {
+        if (/*engine->get_transform() != last_transform || */!drew_once) {
             drew_once = true;
-            last_transform = engine->get_transform();
+//            last_transform = engine->get_transform();
             // prepare memory for image
             VkSubresourceLayout layout;
             char* imagedata = (char*) malloc(Er_vk_engine::er_imagedata_size);
