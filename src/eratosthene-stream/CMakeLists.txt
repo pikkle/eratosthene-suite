@@ -9,6 +9,11 @@ find_package(Vulkan REQUIRED)
 include_directories("include")
 add_subdirectory("include/IXWebSocket")
 
+include_directories("../eratosthene-address/src")
+include_directories("../eratosthene-client/src")
+include_directories("../../lib/libcommon/src")
+include_directories("../../lib/liberatosthene/src")
+
 # pre compile shaders
 set(GLSL_COMPILER glslc)
 
@@ -36,6 +41,7 @@ set(EXTERNAL_HEADERS
         include/base64/base64.cpp
         include/nlohmann/json.hpp
         include/happly/happly.h
+        ../../lib/liberatosthene/src/eratosthene-include.h
         )
 
 set(SOURCES
