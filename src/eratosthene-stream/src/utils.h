@@ -9,7 +9,6 @@
 #include <fstream>
 #include <iostream>
 
-typedef uint32_t uint32;
 
 #define DEBUG (!NDEBUG)
 
@@ -17,10 +16,15 @@ typedef uint32_t uint32;
 /*! test a vulkan command to return the code VK_SUCCESS, otherwise crashes with a given message */
 #define TEST_VK_ASSERT(test_cmd, error_msg) TEST_ASSERT(test_cmd == VK_SUCCESS, error_msg)
 
+namespace StreamUtils {
+
+typedef uint32_t uint32;
 VkResult create_debug(VkInstance &instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
 void destroy_debug(VkInstance &instance, VkDebugUtilsMessengerEXT &debugMessenger, const VkAllocationCallbacks* pAllocator);
 bool check_validation_layers_support(const std::vector<const char *> &layers);
 std::vector<char> readFile(const std::string& filename);
 void encode_image(const char* imagedata, size_t datasize, unsigned char* output);
+
+}
 
 #endif //ERATOSTHENE_STREAM_UTILS_H

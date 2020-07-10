@@ -27,13 +27,13 @@ const std::vector<const char *> extensions = {
 
 /* ----------- Vulkan setup methods ------------ */
 
-VkInstance Er_vk_engine::er_instance = nullptr;
-VkPhysicalDevice Er_vk_engine::er_phys_device = nullptr;
-const size_t Er_vk_engine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
+VkInstance StreamEngine::vk_instance = nullptr;
+VkPhysicalDevice StreamEngine::vk_phys_device = nullptr;
+const size_t StreamEngine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
 
 
-Er_vk_engine::Er_vk_engine(const char * const data_server_ip, int data_server_port) {
-    if (!Er_vk_engine::er_instance && !er_phys_device) {
+StreamEngine::StreamEngine(const unsigned char * const data_server_ip, int data_server_port) {
+    if (!StreamEngine::vk_instance && !vk_phys_device) {
         create_instance();
         create_phys_device();
     }
@@ -48,15 +48,17 @@ Er_vk_engine::Er_vk_engine(const char * const data_server_ip, int data_server_po
     create_pipeline();
     create_descriptor_set();
     create_command_buffers();
+
+    dt_socket = le_client_create(data_server_ip, data_server_port);
 }
 
-Er_vk_engine::~Er_vk_engine() {
+StreamEngine::~StreamEngine() {
     // TODO: free up all vulkan objects
     std::cerr << "Freeing up a engine instance..." << std::endl;
 }
 
 
-void Er_vk_engine::create_instance() {
+void StreamEngine::create_instance() {
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "Eratosthene-stream",
@@ -85,17 +87,17 @@ void Er_vk_engine::create_instance() {
         .ppEnabledExtensionNames = extensions.data(),
     };
 
-    TEST_VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &er_instance),
+    TEST_VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &vk_instance),
                    "failed to create instance!");
 }
 
-void Er_vk_engine::create_phys_device() {
+void StreamEngine::create_phys_device() {
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(er_instance, &deviceCount, nullptr);
+    vkEnumeratePhysicalDevices(vk_instance, &deviceCount, nullptr);
     TEST_ASSERT(deviceCount > 0, "failed to find GPUs with Vulkan support!");
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(er_instance, &deviceCount, devices.data());
+    vkEnumeratePhysicalDevices(vk_instance, &deviceCount, devices.data());
 
     for (auto& device : devices) {
         VkPhysicalDeviceFeatures supportedFeatures;
@@ -105,30 +107,30 @@ void Er_vk_engine::create_phys_device() {
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(device, &deviceProperties);
             printf("GPU selected: %s\n", deviceProperties.deviceName);
-            er_phys_device = device;
+            vk_phys_device = device;
             break;
         }
     }
-    TEST_ASSERT(er_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
+    TEST_ASSERT(vk_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
 }
 
-void Er_vk_engine::setup_debugger() {
+void StreamEngine::setup_debugger() {
     VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
         .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
         .pfnCallback = (PFN_vkDebugReportCallbackEXT) debug_callback,
     };
     auto vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
-            vkGetInstanceProcAddr(er_instance, "vkCreateDebugReportCallbackEXT"));
-    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(er_instance, &debugReportCreateInfo, nullptr, &er_debug_report),
+            vkGetInstanceProcAddr(vk_instance, "vkCreateDebugReportCallbackEXT"));
+    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(vk_instance, &debugReportCreateInfo, nullptr, &vk_debug_report),
                    "error while creating debug reporter");
 }
 
-void Er_vk_engine::create_device() {
+void StreamEngine::create_device() {
     uint32_t queueFamilyCount;
-    vkGetPhysicalDeviceQueueFamilyProperties(er_phys_device, &queueFamilyCount, nullptr);
+    vkGetPhysicalDeviceQueueFamilyProperties(vk_phys_device, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(er_phys_device, &queueFamilyCount, queueFamilyProperties.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(vk_phys_device, &queueFamilyCount, queueFamilyProperties.data());
 
     const float defaultQueuePriority(0.0f);
     VkDeviceQueueCreateInfo graphicsQueueInfo, transferQueueInfo;
@@ -136,7 +138,7 @@ void Er_vk_engine::create_device() {
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilyProperties.size()); i++) {
         if (queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT && !has_gq) {
-            er_graphics_queue_family_index = i;
+            vk_graphics_queue_family_index = i;
             graphicsQueueInfo = {
                 .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                 .queueFamilyIndex = i,
@@ -147,7 +149,7 @@ void Er_vk_engine::create_device() {
             continue;
         }
         if (queueFamilyProperties[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !has_tq) {
-            er_transfer_queue_family_index = i;
+            vk_transfer_queue_family_index = i;
             transferQueueInfo = {
                     .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                     .queueFamilyIndex = i,
@@ -165,110 +167,110 @@ void Er_vk_engine::create_device() {
         .pQueueCreateInfos = queuesCreateInfos.data(),
     };
 
-    TEST_VK_ASSERT(vkCreateDevice(er_phys_device, &deviceCreateInfo, nullptr, &er_device),
+    TEST_VK_ASSERT(vkCreateDevice(vk_phys_device, &deviceCreateInfo, nullptr, &vk_device),
                    "failed to create logical device!");
 
-    vkGetDeviceQueue(er_device, er_graphics_queue_family_index, 0, &er_graphics_queue);
-    vkGetDeviceQueue(er_device, er_transfer_queue_family_index, 0, &er_transfer_queue);
+    vkGetDeviceQueue(vk_device, vk_graphics_queue_family_index, 0, &vk_graphics_queue);
+    vkGetDeviceQueue(vk_device, vk_transfer_queue_family_index, 0, &vk_transfer_queue);
 }
 
-void Er_vk_engine::create_command_pool() {
+void StreamEngine::create_command_pool() {
     VkCommandPoolCreateInfo cmdPoolInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = er_graphics_queue_family_index,
+        .queueFamilyIndex = vk_graphics_queue_family_index,
     };
-    TEST_VK_ASSERT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_graphics_command_pool), "error while creating graphics command pool");
-    cmdPoolInfo.queueFamilyIndex = er_transfer_queue_family_index;
-    TEST_VK_ASSERT(vkCreateCommandPool(er_device, &cmdPoolInfo, nullptr, &er_transfer_command_pool), "error while creating graphics command pool");
+    TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_graphics_command_pool), "error while creating graphics command pool");
+    cmdPoolInfo.queueFamilyIndex = vk_transfer_queue_family_index;
+    TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating graphics command pool");
 }
 
-void Er_vk_engine::bind_data() {
+void StreamEngine::bind_data() {
     BufferWrap stagingWrap;
-    VkDeviceSize vertexBufferSize = er_data_vertices.size() * sizeof(Vertex);
-    VkDeviceSize triangleBufferSize = er_data_triangles.size() * sizeof(uint32_t);
-    VkDeviceSize lineBufferSize = er_data_lines.size() * sizeof(uint32_t);
-    VkDeviceSize pointBufferSize = er_data_points.size() * sizeof(uint32_t);
+    VkDeviceSize vertexBufferSize = dt_vertices.size() * sizeof(Vertex);
+    VkDeviceSize triangleBufferSize = dt_triangles.size() * sizeof(uint32_t);
+    VkDeviceSize lineBufferSize = dt_lines.size() * sizeof(uint32_t);
+    VkDeviceSize pointBufferSize = dt_points.size() * sizeof(uint32_t);
 
     // Vertices
-    if (er_data_vertices.size()  > 0) {
-        std::cerr << "Loaded " << er_data_vertices.size() << " vertices in gpu memory" << std::endl;
+    if (dt_vertices.size() > 0) {
+        std::cerr << "Loaded " << dt_vertices.size() << " vertices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      &stagingWrap, vertexBufferSize, (void *) er_data_vertices.data());
+                      &stagingWrap, vertexBufferSize, (void *) dt_vertices.data());
         create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                      &er_vertices_buffer, vertexBufferSize);
-        bind_memory(vertexBufferSize, stagingWrap, er_vertices_buffer);
+                      &vk_vertices_buffer, vertexBufferSize);
+        bind_memory(vertexBufferSize, stagingWrap, vk_vertices_buffer);
     }
 
 
     // Triangles
-    if (er_data_triangles.size()  > 0) {
-        std::cerr << "Loaded " << er_data_triangles.size() << " triangle indices in gpu memory" << std::endl;
+    if (dt_triangles.size() > 0) {
+        std::cerr << "Loaded " << dt_triangles.size() << " triangle indices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      &stagingWrap, triangleBufferSize, (void *) er_data_triangles.data());
+                      &stagingWrap, triangleBufferSize, (void *) dt_triangles.data());
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                      &er_triangles_buffer, triangleBufferSize);
-        bind_memory(triangleBufferSize, stagingWrap, er_triangles_buffer);
+                      &vk_triangles_buffer, triangleBufferSize);
+        bind_memory(triangleBufferSize, stagingWrap, vk_triangles_buffer);
     }
 
     // Lines
-    if (er_data_lines.size()) {
-        std::cerr << "Loaded " << er_data_lines.size() << " line indices in gpu memory" << std::endl;
+    if (dt_lines.size()) {
+        std::cerr << "Loaded " << dt_lines.size() << " line indices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      &stagingWrap, lineBufferSize, (void *) er_data_lines.data());
+                      &stagingWrap, lineBufferSize, (void *) dt_lines.data());
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                      &er_lines_buffer, lineBufferSize);
-        bind_memory(lineBufferSize, stagingWrap, er_lines_buffer);
+                      &vk_lines_buffer, lineBufferSize);
+        bind_memory(lineBufferSize, stagingWrap, vk_lines_buffer);
     }
 
     // Points
-    if (er_data_points.size() > 0) {
-        std::cerr << "Loaded " << er_data_points.size() << " point indices in gpu memory " << std::endl;
+    if (dt_points.size() > 0) {
+        std::cerr << "Loaded " << dt_points.size() << " point indices in gpu memory " << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      &stagingWrap, pointBufferSize, (void *) er_data_points.data());
+                      &stagingWrap, pointBufferSize, (void *) dt_points.data());
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                      &er_points_buffer, pointBufferSize);
-        bind_memory(pointBufferSize, stagingWrap, er_points_buffer);
+                      &vk_points_buffer, pointBufferSize);
+        bind_memory(pointBufferSize, stagingWrap, vk_points_buffer);
     }
 }
 
-void Er_vk_engine::create_attachments() {
+void StreamEngine::create_attachments() {
     // Color attachment
     create_attachment(
-            er_color_attachment,
+            vk_color_attachment,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-            er_color_format,
+            vk_color_format,
             VK_IMAGE_ASPECT_COLOR_BIT
     );
 
     // Depth attachment
-    er_depth_format = find_supported_format(
+    vk_depth_format = find_supported_format(
             {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT,
              VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM_S8_UINT, VK_FORMAT_D16_UNORM},
             VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
     );
     create_attachment(
-            er_depth_attachment,
+            vk_depth_attachment,
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-            er_depth_format,
+            vk_depth_format,
             VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
     );
 
 }
 
-void Er_vk_engine::create_render_pass() {
+void StreamEngine::create_render_pass() {
     std::array<VkAttachmentDescription, 2> attchmentDescriptions = {
         // Color attachment
         VkAttachmentDescription {
-            .format = er_color_format,
+            .format = vk_color_format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -279,7 +281,7 @@ void Er_vk_engine::create_render_pass() {
         },
         // Depth attachment
         VkAttachmentDescription {
-            .format = er_depth_format,
+            .format = vk_depth_format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -328,22 +330,22 @@ void Er_vk_engine::create_render_pass() {
         .dependencyCount = static_cast<uint32_t>(dependencies.size()),
         .pDependencies = dependencies.data(),
     };
-    TEST_VK_ASSERT(vkCreateRenderPass(er_device, &renderPassInfo, nullptr, &er_render_pass), "error while creating render pass");
-    VkImageView attachments[2] = {er_color_attachment.view, er_depth_attachment.view};
+    TEST_VK_ASSERT(vkCreateRenderPass(vk_device, &renderPassInfo, nullptr, &vk_render_pass), "error while creating render pass");
+    VkImageView attachments[2] = {vk_color_attachment.view, vk_depth_attachment.view};
 
     VkFramebufferCreateInfo framebufferCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .renderPass = er_render_pass,
+        .renderPass = vk_render_pass,
         .attachmentCount = 2,
         .pAttachments = attachments,
         .width = WIDTH,
         .height = HEIGHT,
         .layers = 1,
     };
-    TEST_VK_ASSERT(vkCreateFramebuffer(er_device, &framebufferCreateInfo, nullptr, &er_framebuffer), "error while creating framebuffer");
+    TEST_VK_ASSERT(vkCreateFramebuffer(vk_device, &framebufferCreateInfo, nullptr, &vk_framebuffer), "error while creating framebuffer");
 }
 
-void Er_vk_engine::create_pipeline() {
+void StreamEngine::create_pipeline() {
     VkDescriptorSetLayoutBinding uboLayoutBinding = {
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -356,7 +358,7 @@ void Er_vk_engine::create_pipeline() {
         .bindingCount = 1,
         .pBindings = &uboLayoutBinding,
     };
-    TEST_VK_ASSERT(vkCreateDescriptorSetLayout(er_device, &layoutInfo, nullptr, &er_descriptor_set_layout), "failed to create descriptor set layout!");
+    TEST_VK_ASSERT(vkCreateDescriptorSetLayout(vk_device, &layoutInfo, nullptr, &vk_descriptor_set_layout), "failed to create descriptor set layout!");
 
     VkPushConstantRange pushConstantRange = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
@@ -366,14 +368,14 @@ void Er_vk_engine::create_pipeline() {
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
-        .pSetLayouts = &er_descriptor_set_layout,
+        .pSetLayouts = &vk_descriptor_set_layout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstantRange,
     };
-    TEST_VK_ASSERT(vkCreatePipelineLayout(er_device, &pipelineLayoutCreateInfo, nullptr, &er_pipeline_layout), "error while creating pipeline layout");
+    TEST_VK_ASSERT(vkCreatePipelineLayout(vk_device, &pipelineLayoutCreateInfo, nullptr, &vk_pipeline_layout), "error while creating pipeline layout");
 
     VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
-    TEST_VK_ASSERT(vkCreatePipelineCache(er_device, &pipelineCacheCreateInfo, nullptr, &er_pipeline_cache), "error while creating pipeline cache");
+    TEST_VK_ASSERT(vkCreatePipelineCache(vk_device, &pipelineCacheCreateInfo, nullptr, &vk_pipeline_cache), "error while creating pipeline cache");
 
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -463,52 +465,52 @@ void Er_vk_engine::create_pipeline() {
         .pDepthStencilState = &depthStencilState,
         .pColorBlendState = &colorBlendState,
         .pDynamicState = &dynamicState,
-        .layout = er_pipeline_layout,
-        .renderPass = er_render_pass,
+        .layout = vk_pipeline_layout,
+        .renderPass = vk_render_pass,
         .basePipelineHandle = VK_NULL_HANDLE,
         .basePipelineIndex = -1,
     };
 
-    if (!er_data_triangles.empty()) {
+    if (!dt_triangles.empty()) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
-                                                 &er_pipeline_triangles), "error while creating triangles pipeline");
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, vk_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+                                                 &vk_pipeline_triangles), "error while creating triangles pipeline");
     }
-    if (!er_data_lines.empty()) {
+    if (!dt_lines.empty()) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-        TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
-                                                 &er_pipeline_lines), "error while creating lines pipeline");
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, vk_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+                                                 &vk_pipeline_lines), "error while creating lines pipeline");
     }
-    if (!er_data_points.empty()) {
+    if (!dt_points.empty()) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-        TEST_VK_ASSERT(vkCreateGraphicsPipelines(er_device, er_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
-                                                 &er_pipeline_points), "error while creating points pipeline");
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, vk_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+                                                 &vk_pipeline_points), "error while creating points pipeline");
     }
 
     for (auto stage : shaderStages) {
-        vkDestroyShaderModule(er_device, stage.module, nullptr);
+        vkDestroyShaderModule(vk_device, stage.module, nullptr);
     }
 }
 
-void Er_vk_engine::create_command_buffers() {
+void StreamEngine::create_command_buffers() {
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = er_graphics_command_pool,
+        .commandPool = vk_graphics_command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1,
     };
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(er_device, &allocInfo, &er_command_buffer), "failed to allocate command buffers!");
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_command_buffer), "failed to allocate command buffers!");
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    TEST_VK_ASSERT(vkBeginCommandBuffer(er_command_buffer, &beginInfo), "failed to begin recording command buffer!");
+    TEST_VK_ASSERT(vkBeginCommandBuffer(vk_command_buffer, &beginInfo), "failed to begin recording command buffer!");
 
     std::array<VkClearValue, 2> clearValues = {};
     clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
     clearValues[1].depthStencil = { 1.0f, 0 };
     VkRenderPassBeginInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = er_render_pass,
-        .framebuffer = er_framebuffer,
+        .renderPass = vk_render_pass,
+        .framebuffer = vk_framebuffer,
         .renderArea = {
             .offset = {0, 0},
             .extent = {WIDTH, HEIGHT},},
@@ -516,9 +518,9 @@ void Er_vk_engine::create_command_buffers() {
         .pClearValues = clearValues.data(),
     };
 
-    VkBuffer vertexBuffers[] = {er_vertices_buffer.buf};
+    VkBuffer vertexBuffers[] = {vk_vertices_buffer.buf};
     VkDeviceSize offsets[] = {0};
-    vkCmdBeginRenderPass(er_command_buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(vk_command_buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport = {
         .width = (float) WIDTH,
@@ -526,35 +528,35 @@ void Er_vk_engine::create_command_buffers() {
         .minDepth = (float)0.0f,
         .maxDepth = (float)1.0f,
     };
-    vkCmdSetViewport(er_command_buffer, 0, 1, &viewport);
+    vkCmdSetViewport(vk_command_buffer, 0, 1, &viewport);
     VkRect2D scissor = {.extent = {WIDTH, HEIGHT},};
 
-    vkCmdSetScissor(er_command_buffer, 0, 1, &scissor);
-    vkCmdBindDescriptorSets(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_layout, 0, 1, &er_descriptor_set, 0, nullptr);
-    vkCmdBindVertexBuffers(er_command_buffer, 0, 1, vertexBuffers, offsets);
+    vkCmdSetScissor(vk_command_buffer, 0, 1, &scissor);
+    vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_layout, 0, 1, &vk_descriptor_set, 0, nullptr);
+    vkCmdBindVertexBuffers(vk_command_buffer, 0, 1, vertexBuffers, offsets);
 
-    if (!er_data_triangles.empty()) {
-        vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_triangles);
-        vkCmdBindIndexBuffer(er_command_buffer, er_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(er_command_buffer, er_data_triangles.size(), 1, 0, 0, 0);
+    if (!dt_triangles.empty()) {
+        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_triangles);
+        vkCmdBindIndexBuffer(vk_command_buffer, vk_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(vk_command_buffer, dt_triangles.size(), 1, 0, 0, 0);
     }
-    if (!er_data_lines.empty()) {
-        vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_lines);
-        vkCmdBindIndexBuffer(er_command_buffer, er_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(er_command_buffer, er_data_lines.size(), 1, 0, 0, 0);
+    if (!dt_lines.empty()) {
+        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_lines);
+        vkCmdBindIndexBuffer(vk_command_buffer, vk_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(vk_command_buffer, dt_lines.size(), 1, 0, 0, 0);
     }
-    if (!er_data_points.empty()) {
-        vkCmdBindPipeline(er_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, er_pipeline_points);
-        vkCmdBindIndexBuffer(er_command_buffer, er_points_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(er_command_buffer, er_data_points.size(), 1, 0, 0, 0);
+    if (!dt_points.empty()) {
+        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_points);
+        vkCmdBindIndexBuffer(vk_command_buffer, vk_points_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(vk_command_buffer, dt_points.size(), 1, 0, 0, 0);
     }
 
-    vkCmdEndRenderPass(er_command_buffer);
+    vkCmdEndRenderPass(vk_command_buffer);
 
-    TEST_VK_ASSERT(vkEndCommandBuffer(er_command_buffer), "failed to record command buffer!");
+    TEST_VK_ASSERT(vkEndCommandBuffer(vk_command_buffer), "failed to record command buffer!");
 }
 
-void Er_vk_engine::create_descriptor_set() {
+void StreamEngine::create_descriptor_set() {
     VkDescriptorPoolSize poolSize = {
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = 1,
@@ -565,31 +567,31 @@ void Er_vk_engine::create_descriptor_set() {
         .poolSizeCount = 1,
         .pPoolSizes = &poolSize,
     };
-    TEST_VK_ASSERT(vkCreateDescriptorPool(er_device, &poolInfo, nullptr, &er_descriptor_pool), "failed to create descriptor pool!");
+    TEST_VK_ASSERT(vkCreateDescriptorPool(vk_device, &poolInfo, nullptr, &vk_descriptor_pool), "failed to create descriptor pool!");
 
     VkDescriptorSetAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = er_descriptor_pool,
+        .descriptorPool = vk_descriptor_pool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &er_descriptor_set_layout,
+        .pSetLayouts = &vk_descriptor_set_layout,
     };
-    TEST_VK_ASSERT(vkAllocateDescriptorSets(er_device, &allocInfo, &er_descriptor_set), "failed to allocate descriptor sets!");
+    TEST_VK_ASSERT(vkAllocateDescriptorSets(vk_device, &allocInfo, &vk_descriptor_set), "failed to allocate descriptor sets!");
 
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
     create_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            &er_uniform_buffer, bufferSize);
+                  &vk_uniform_buffer, bufferSize);
 
     VkDescriptorBufferInfo bufferInfo = {
-        .buffer = er_uniform_buffer.buf,
+        .buffer = vk_uniform_buffer.buf,
         .offset = 0,
         .range = sizeof(UniformBufferObject),
     };
 
     VkWriteDescriptorSet descriptorWrite = {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = er_descriptor_set,
+        .dstSet = vk_descriptor_set,
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorCount = 1,
@@ -597,7 +599,7 @@ void Er_vk_engine::create_descriptor_set() {
         .pBufferInfo = &bufferInfo,
     };
 
-    vkUpdateDescriptorSets(er_device, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(vk_device, 1, &descriptorWrite, 0, nullptr);
 }
 
 /* -------- End of vulkan setup methods ------- */
@@ -605,9 +607,9 @@ void Er_vk_engine::create_descriptor_set() {
 
 /* --------- Vulkan rendering methods --------- */
 
-void Er_vk_engine::update_uniform_buffers() {
-    auto eye = glm::vec3(-2.f, -2.f, 2.5f);
-    auto center = glm::vec3(0.0f, 0.0f, 1.f);
+void StreamEngine::update_uniform_buffers() {
+    auto eye = glm::vec3(0.f, 1.f, 1.f);
+    auto center = glm::vec3(0.0f, 0.0f, 0.f);
     auto rotation = glm::rotate(glm::mat4(1.0f), glm::radians(0.f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     UniformBufferObject ubo = {
@@ -622,19 +624,19 @@ void Er_vk_engine::update_uniform_buffers() {
     ubo.proj[1][1] *= -1;
 
     void *data;
-    vkMapMemory(er_device, er_uniform_buffer.mem, 0, sizeof(ubo), 0, &data);
+    vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data);
     memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(er_device, er_uniform_buffer.mem);
+    vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
 }
 
-void Er_vk_engine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
+void StreamEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
     update_uniform_buffers();
-    submit_work(er_command_buffer, er_graphics_queue);
-    vkDeviceWaitIdle(er_device);
+    submit_work(vk_command_buffer, vk_graphics_queue);
+    vkDeviceWaitIdle(vk_device);
     output_result(imagedata, subresourceLayout);
 }
 
-void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
+void StreamEngine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
     VkImage copyImage;
     VkMemoryRequirements memRequirements;
     VkDeviceMemory dstImageMemory;
@@ -643,7 +645,7 @@ void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourc
     VkImageCreateInfo imageCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = er_color_format,
+        .format = vk_color_format,
         .extent = {
                 .width = WIDTH,
                 .height = HEIGHT,
@@ -656,25 +658,25 @@ void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourc
         .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
-    TEST_VK_ASSERT(vkCreateImage(er_device, &imageCreateInfo, nullptr, &copyImage), "error while creating copy image");
+    TEST_VK_ASSERT(vkCreateImage(vk_device, &imageCreateInfo, nullptr, &copyImage), "error while creating copy image");
 
-    vkGetImageMemoryRequirements(er_device, copyImage, &memRequirements);
+    vkGetImageMemoryRequirements(vk_device, copyImage, &memRequirements);
     VkMemoryAllocateInfo memAllocInfo = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = memRequirements.size,
         .memoryTypeIndex = get_memtype_index(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
     };
 
-    TEST_VK_ASSERT(vkAllocateMemory(er_device, &memAllocInfo, nullptr, &dstImageMemory), "error while allocating memory for copy image");
-    TEST_VK_ASSERT(vkBindImageMemory(er_device, copyImage, dstImageMemory, 0), "error while binding memory to copy image");
+    TEST_VK_ASSERT(vkAllocateMemory(vk_device, &memAllocInfo, nullptr, &dstImageMemory), "error while allocating memory for copy image");
+    TEST_VK_ASSERT(vkBindImageMemory(vk_device, copyImage, dstImageMemory, 0), "error while binding memory to copy image");
 
     VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = er_transfer_command_pool,
+        .commandPool = vk_transfer_command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1,
     };
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(er_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffer for image copy");
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffer for image copy");
     VkCommandBufferBeginInfo cmdBufInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     TEST_VK_ASSERT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while beginning command buffer for image copy");
 
@@ -708,7 +710,7 @@ void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourc
         }
     };
 
-    vkCmdCopyImage(copyCmd, er_color_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    vkCmdCopyImage(copyCmd, vk_color_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                    copyImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageCopyRegion);
 
     imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -719,19 +721,19 @@ void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourc
                          nullptr, 1, &imageMemoryBarrier);
 
     TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while ending command buffers for image copy");
-    submit_work(copyCmd, er_transfer_queue);
+    submit_work(copyCmd, vk_transfer_queue);
 
     VkImageSubresource subResource{VK_IMAGE_ASPECT_COLOR_BIT};
 
-    vkGetImageSubresourceLayout(er_device, copyImage, &subResource, &subresourceLayout);
+    vkGetImageSubresourceLayout(vk_device, copyImage, &subResource, &subresourceLayout);
 
     char *tmpdata;
-    vkMapMemory(er_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
+    vkMapMemory(vk_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
     memcpy(imagedata, tmpdata, er_imagedata_size);
 
-    vkUnmapMemory(er_device, dstImageMemory);
-    vkFreeMemory(er_device, dstImageMemory, nullptr);
-    vkDestroyImage(er_device, copyImage, nullptr);
+    vkUnmapMemory(vk_device, dstImageMemory);
+    vkFreeMemory(vk_device, dstImageMemory, nullptr);
+    vkDestroyImage(vk_device, copyImage, nullptr);
 
 }
 
@@ -740,7 +742,7 @@ void Er_vk_engine::output_result(char* imagedata, VkSubresourceLayout subresourc
 
 /* --------------- Helper methods --------------- */
 
-inline void Er_vk_engine::submit_work(VkCommandBuffer cmd, VkQueue queue) {
+inline void StreamEngine::submit_work(VkCommandBuffer cmd, VkQueue queue) {
     VkSubmitInfo submitInfo = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .commandBufferCount = 1,
@@ -751,15 +753,15 @@ inline void Er_vk_engine::submit_work(VkCommandBuffer cmd, VkQueue queue) {
             .flags = 0,
     };
     VkFence fence;
-    TEST_VK_ASSERT(vkCreateFence(er_device, &fenceInfo, nullptr, &fence), "error while creating fence");
+    TEST_VK_ASSERT(vkCreateFence(vk_device, &fenceInfo, nullptr, &fence), "error while creating fence");
     TEST_VK_ASSERT(vkQueueSubmit(queue, 1, &submitInfo, fence), "error while submitting to queue");
-    TEST_VK_ASSERT(vkWaitForFences(er_device, 1, &fence, VK_TRUE, UINT64_MAX), "error while waiting for queue submission fences");
-    vkDestroyFence(er_device, fence, nullptr);
+    TEST_VK_ASSERT(vkWaitForFences(vk_device, 1, &fence, VK_TRUE, UINT64_MAX), "error while waiting for queue submission fences");
+    vkDestroyFence(vk_device, fence, nullptr);
 }
 
-inline uint32_t Er_vk_engine::get_memtype_index(uint32_t typeBits, VkMemoryPropertyFlags properties) {
+inline uint32_t StreamEngine::get_memtype_index(uint32_t typeBits, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
-    vkGetPhysicalDeviceMemoryProperties(er_phys_device, &deviceMemoryProperties);
+    vkGetPhysicalDeviceMemoryProperties(vk_phys_device, &deviceMemoryProperties);
     for (uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; i++) {
         if ((typeBits & 1) == 1 && (deviceMemoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
             return i;
@@ -769,43 +771,43 @@ inline uint32_t Er_vk_engine::get_memtype_index(uint32_t typeBits, VkMemoryPrope
     return 0;
 }
 
-inline void Er_vk_engine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data) {
+inline void StreamEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data) {
     VkBufferCreateInfo bufferCreateInfo {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = size,
             .usage = usageFlags,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
-    TEST_VK_ASSERT(vkCreateBuffer(er_device, &bufferCreateInfo, nullptr, &wrap->buf), "error while creating buffer");
+    TEST_VK_ASSERT(vkCreateBuffer(vk_device, &bufferCreateInfo, nullptr, &wrap->buf), "error while creating buffer");
 
     VkMemoryRequirements memReqs;
-    vkGetBufferMemoryRequirements(er_device, wrap->buf, &memReqs);
+    vkGetBufferMemoryRequirements(vk_device, wrap->buf, &memReqs);
     VkMemoryAllocateInfo memAlloc = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             .allocationSize = memReqs.size,
             .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, memoryPropertyFlags),
     };
-    TEST_VK_ASSERT(vkAllocateMemory(er_device, &memAlloc, nullptr, &wrap->mem), "error while allocating memory to buffer");
+    TEST_VK_ASSERT(vkAllocateMemory(vk_device, &memAlloc, nullptr, &wrap->mem), "error while allocating memory to buffer");
 
     if (data != nullptr) {
         void *mapped;
-        TEST_VK_ASSERT(vkMapMemory(er_device, wrap->mem, 0, size, 0, &mapped), "error while maping memory");
+        TEST_VK_ASSERT(vkMapMemory(vk_device, wrap->mem, 0, size, 0, &mapped), "error while maping memory");
         memcpy(mapped, data, size);
-        vkUnmapMemory(er_device, wrap->mem);
+        vkUnmapMemory(vk_device, wrap->mem);
     }
 
-    TEST_VK_ASSERT(vkBindBufferMemory(er_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
+    TEST_VK_ASSERT(vkBindBufferMemory(vk_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
 }
 
-inline void Er_vk_engine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
+inline void StreamEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
     VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = er_transfer_command_pool,
+            .commandPool = vk_transfer_command_pool,
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
     };
     VkCommandBuffer copyCmd;
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(er_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffers");
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffers");
     VkCommandBufferBeginInfo cmdBufInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
@@ -816,16 +818,16 @@ inline void Er_vk_engine::bind_memory(VkDeviceSize dataSize, BufferWrap &staging
     };
     vkCmdCopyBuffer(copyCmd, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
     TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
-    submit_work(copyCmd, er_transfer_queue);
+    submit_work(copyCmd, vk_transfer_queue);
 
-    vkDestroyBuffer(er_device, stagingWrap.buf, nullptr);
-    vkFreeMemory(er_device, stagingWrap.mem, nullptr);
+    vkDestroyBuffer(vk_device, stagingWrap.buf, nullptr);
+    vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
 }
 
-inline VkFormat Er_vk_engine::find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
+inline VkFormat StreamEngine::find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
     for (auto& format : candidates) {
         VkFormatProperties formatProps;
-        vkGetPhysicalDeviceFormatProperties(er_phys_device, format, &formatProps);
+        vkGetPhysicalDeviceFormatProperties(vk_phys_device, format, &formatProps);
         if (formatProps.optimalTilingFeatures & features) {
             return format;
         }
@@ -833,7 +835,7 @@ inline VkFormat Er_vk_engine::find_supported_format(const std::vector<VkFormat> 
     throw std::runtime_error("failed to find supported format!");
 }
 
-inline void Er_vk_engine::create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect) {
+inline void StreamEngine::create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect) {
     VkImageCreateInfo imageInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
@@ -849,15 +851,15 @@ inline void Er_vk_engine::create_attachment(Attachment &att, VkImageUsageFlags i
             .usage = imgUsage,
     };
     VkMemoryRequirements memReqs;
-    TEST_VK_ASSERT(vkCreateImage(er_device, &imageInfo, nullptr, &att.img), "error while creating image");
-    vkGetImageMemoryRequirements(er_device, att.img, &memReqs);
+    TEST_VK_ASSERT(vkCreateImage(vk_device, &imageInfo, nullptr, &att.img), "error while creating image");
+    vkGetImageMemoryRequirements(vk_device, att.img, &memReqs);
     VkMemoryAllocateInfo memAlloc = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             .allocationSize = memReqs.size,
             .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
     };
-    TEST_VK_ASSERT(vkAllocateMemory(er_device, &memAlloc, nullptr, &att.mem), "error while allocating attachment image memory");
-    TEST_VK_ASSERT(vkBindImageMemory(er_device, att.img, att.mem, 0), "error while binding attachment image to memory");
+    TEST_VK_ASSERT(vkAllocateMemory(vk_device, &memAlloc, nullptr, &att.mem), "error while allocating attachment image memory");
+    TEST_VK_ASSERT(vkBindImageMemory(vk_device, att.img, att.mem, 0), "error while binding attachment image to memory");
 
     VkImageViewCreateInfo viewInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -871,23 +873,23 @@ inline void Er_vk_engine::create_attachment(Attachment &att, VkImageUsageFlags i
                     .baseArrayLayer = 0,
                     .layerCount = 1,},
     };
-    TEST_VK_ASSERT(vkCreateImageView(er_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
+    TEST_VK_ASSERT(vkCreateImageView(vk_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
 }
 
-inline VkShaderModule Er_vk_engine::create_shader_module(const std::vector<char> &code) {
+inline VkShaderModule StreamEngine::create_shader_module(const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .codeSize = code.size(),
             .pCode = reinterpret_cast<const uint32_t *>(code.data()),
     };
     VkShaderModule shaderModule;
-    TEST_VK_ASSERT(vkCreateShaderModule(er_device, &createInfo, nullptr, &shaderModule),
+    TEST_VK_ASSERT(vkCreateShaderModule(vk_device, &createInfo, nullptr, &shaderModule),
                    "failed to create shader module!");
     return shaderModule;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL Er_vk_engine::debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
-                                                     uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL StreamEngine::debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
+                                                            uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
     fprintf(stderr, "[VALIDATION]: %s - %s\n", pLayerPrefix, pMessage);
     return VK_FALSE;
 }

@@ -13,6 +13,8 @@
 #include <optional>
 #include <vector>
 
+namespace StreamModels {
+
 struct Vertex {
     /*! position of the vertex */
     glm::vec3 pos;
@@ -80,4 +82,5 @@ struct BufferWrap {
     VkDeviceMemory mem;
 };
 
+}
 #endif //ERATOSTHENE_STREAM_MODELS_H

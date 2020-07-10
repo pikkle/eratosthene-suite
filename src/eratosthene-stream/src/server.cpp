@@ -13,38 +13,6 @@
 #include <nlohmann/json.hpp>
 #include <happly/happly.h>
 
-Vertices debug_vertices = {
-        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
-
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-
-        {{-0.6f, -0.6f, -0.6f}, {0.0f, 0.0f, 1.0f}},
-        {{0.6f, 0.6f, 0.6f}, {0.0f, 1.0f, 0.0f}},
-
-        {{0.7f, 0.7f, 0.7f}, {1.0f, 1.0f, 1.0f}},
-};
-
-Indices debug_triangles = {
-        0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4,
-};
-
-Indices debug_lines = {
-        8, 9,
-};
-
-Indices debug_points = {
-        10,
-};
-
-Indices empty = {};
-
 const char * usage_message = "Usage:\n"
                              "  $ eratosthene-stream [PARAMETERS]\n"
                              "Parameters:\n"
@@ -54,7 +22,7 @@ const char * usage_message = "Usage:\n"
 
 int main(int argc, char **argv) {
     int args;
-    char *data_server_ip = nullptr;
+    char *_data_server_ip = nullptr;
     int data_server_port = 0;
     int stream_port = 0;
     while ((args = getopt(argc, argv, "s:d:p:h")) != -1) {
@@ -63,7 +31,7 @@ int main(int argc, char **argv) {
                 stream_port = atoi(optarg);
                 break;
             case 'd':
-                data_server_ip = optarg;
+                _data_server_ip = optarg;
                 break;
             case 'p':
                 data_server_port = atoi(optarg);
@@ -82,51 +50,16 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (!stream_port || !data_server_ip || !data_server_port) {
+    if (!stream_port || !_data_server_ip || !data_server_port) {
         std::cerr << "Missing arguments." << std::endl;
         std::cerr << usage_message << std::endl;
         exit(-1);
     }
 
-    setup_server(stream_port, data_server_ip, data_server_port);
+    const auto* data_server_ip = reinterpret_cast<unsigned char *>(_data_server_ip);
+    StreamServer::setup_server(stream_port, data_server_ip, data_server_port);
 }
 /* -------------- Helper methods -------------- */
-
-void split(const std::string& s, char c, std::vector<std::string>& v) {
-    int i = 0;
-    int j = s.find(c);
-
-    while (j >= 0) {
-        v.push_back(s.substr(i, j-i));
-        i = ++j;
-        j = s.find(c, j);
-
-        if (j < 0) {
-            v.push_back(s.substr(i, s.length()));
-        }
-    }
-}
-
-Vertices load_ply_data(std::string path) {
-    std::cout << "Loading ply scene..." << std::endl;
-    std::vector<Vertex> vertices;
-
-    happly::PLYData plyIn(path);
-    auto vPos = plyIn.getVertexPositions();
-    auto vCol = plyIn.getVertexColors();
-    assert(vPos.size() == vCol.size());
-    auto posFactor = 2.f;
-    for (int i = 0; i < vPos.size(); ++i) {
-        auto pos = vPos.at(i) ;
-        auto col = vCol.at(i);
-        vertices.push_back(Vertex{
-            {-(float) pos[0] / posFactor, (float) pos[1] / posFactor, 2.f-(float) pos[2] / posFactor},
-            {((float) col[0] / 255.f),  ((float) col[1] / 255.f), ((float) col[2] / 255.f)}
-        });
-    }
-    std::cout << "Finished importing " << vPos.size() << " vertices from the .ply file." << std::endl;
-    return vertices;
-}
 
 void encode_callback(void *context, void *data, int size) {
     auto image = reinterpret_cast<std::vector<uint8_t>*>(context);
@@ -140,7 +73,7 @@ void encode_callback(void *context, void *data, int size) {
 
 /* ----------- Broadcasting methods ----------- */
 
-void setup_server(int server_port, const char * data_server_ip, int data_server_port) {
+void StreamServer::setup_server(int server_port, const unsigned char * data_server_ip, int data_server_port) {
     // @TODO: enable websocket deflate per message
     ix::WebSocketServer er_server_ws(server_port, STREAM_ADDRESS);
     std::cout << "Listening on " << server_port << std::endl;
@@ -151,7 +84,7 @@ void setup_server(int server_port, const char * data_server_ip, int data_server_
                 // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
 
                 // create a private engine for this new connection
-                auto engine = std::make_shared<Er_vk_engine>(data_server_ip, data_server_port);
+                auto engine = std::make_shared<StreamEngine>(data_server_ip, data_server_port);
 
                 // client renderer in a new thread
                 std::thread t(main_loop, webSocket, connectionState, engine);
@@ -163,19 +96,12 @@ void setup_server(int server_port, const char * data_server_ip, int data_server_
                         try {
                         // parse json
                             auto j = nlohmann::json::parse(msg.get()->str.data());
-                            // @TODO check that json is transform-consistent
+                            // @TODO check that json is consistent on what is expected
 
                             // create transform of the scene to pass to the engine for further frames redraw
-//                            Er_transform new_transform = engine->get_transform();
-//
-//                            new_transform.rotate_x += (float) j["rotate_x"];
-//                            new_transform.rotate_y += (float) j["rotate_y"];
-//                            new_transform.rotate_z += (float) j["rotate_z"];
-//                            new_transform.translate_camera_x += (float) j["translate_camera_x"];
-//                            new_transform.translate_camera_y += (float) j["translate_camera_y"];
-//                            new_transform.translate_camera_z += (float) j["translate_camera_z"];
-//                            new_transform.zoom += (float) j["zoom"];
-//                            engine->set_transform(new_transform);
+                            // @TODO update client_view depending on the inputs received in the json
+                            // Ex:
+                            // float rotation = (float) j["rotate_x"];
                         } catch (std::exception &e) {
                             std::cerr << "Got a malformed json object :" << std::endl << msg.get()->str << std::endl;
                         }
@@ -197,29 +123,27 @@ void setup_server(int server_port, const char * data_server_ip, int data_server_
     er_server_ws.wait();
 }
 
-void main_loop(std::shared_ptr<ix::WebSocket> webSocket,
+void StreamServer::main_loop(std::shared_ptr<ix::WebSocket> webSocket,
                std::shared_ptr<ix::ConnectionState> connectionState,
-               std::shared_ptr<Er_vk_engine> engine) {
-//    Er_transform last_transform = {.rotate_z =  0.0f};
-//    engine->set_transform(last_transform);
+               std::shared_ptr<StreamEngine> engine) {
     bool drew_once = false;
 
     while (!connectionState->isTerminated()) {
         // only draw new image if it has been modified since last draw
-        if (/*engine->get_transform() != last_transform || */!drew_once) {
+        if (!drew_once) { // @TODO: check if the client_view has been updated
             drew_once = true;
-//            last_transform = engine->get_transform();
+
             // prepare memory for image
             VkSubresourceLayout layout;
-            char* imagedata = (char*) malloc(Er_vk_engine::er_imagedata_size);
+            char* imagedata = (char*) malloc(StreamEngine::er_imagedata_size);
 
             // render the image and output it to memory
             engine->draw_frame(imagedata, layout);
 
             // encode image for web
+            // @TODO: use a dedicated streaming server with performant codecs to send the frames
             std::vector<uint8_t> encodedData;
             stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata,  30);
-//            stbi_write_bmp_to_func(encode_callback, reinterpret_cast<void*>(&encodedData), WIDTH, HEIGHT, 4, imagedata);
             auto b64 = base64_encode(encodedData.data(), encodedData.size());
             auto result = b64.data();
 

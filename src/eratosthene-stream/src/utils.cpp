@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-VkResult create_debug(VkInstance &instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
+VkResult StreamUtils::create_debug(VkInstance &instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
@@ -11,14 +11,14 @@ VkResult create_debug(VkInstance &instance, const VkDebugUtilsMessengerCreateInf
     }
 }
 
-void destroy_debug(VkInstance &instance, VkDebugUtilsMessengerEXT &debugMessenger, const VkAllocationCallbacks* pAllocator) {
+void StreamUtils::destroy_debug(VkInstance &instance, VkDebugUtilsMessengerEXT &debugMessenger, const VkAllocationCallbacks* pAllocator) {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {
         func(instance, debugMessenger, pAllocator);
     }
 }
 
-bool check_validation_layers_support(const std::vector<const char *> &layers) {
+bool StreamUtils::check_validation_layers_support(const std::vector<const char *> &layers) {
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
@@ -38,7 +38,7 @@ bool check_validation_layers_support(const std::vector<const char *> &layers) {
     return true;
 }
 
-std::vector<char> readFile(const std::string& filename) {
+std::vector<char> StreamUtils::readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
@@ -55,7 +55,7 @@ std::vector<char> readFile(const std::string& filename) {
     return buffer;
 }
 
-void encode_image(const char* data, size_t size, unsigned char *output) {
+void StreamUtils::encode_image(const char* data, size_t size, unsigned char *output) {
     uint32_t bmp_header_size = sizeof(char) * 14;
     uint32_t dib_header_size = sizeof(char) * 108;
     uint32_t total_size = (bmp_header_size + dib_header_size + size);
