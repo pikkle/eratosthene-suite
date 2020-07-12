@@ -33,6 +33,11 @@ const size_t StreamEngine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEI
 
 
 StreamEngine::StreamEngine(const unsigned char * const data_server_ip, int data_server_port) {
+    dt_socket = le_client_create(data_server_ip, data_server_port);
+    if (dt_socket == _LE_SOCK_NULL) {
+        throw std::runtime_error("Could not connect to data server");
+    }
+
     if (!StreamEngine::vk_instance && !vk_phys_device) {
         create_instance();
         create_phys_device();
@@ -48,8 +53,6 @@ StreamEngine::StreamEngine(const unsigned char * const data_server_ip, int data_
     create_pipeline();
     create_descriptor_set();
     create_command_buffers();
-
-    dt_socket = le_client_create(data_server_ip, data_server_port);
 }
 
 StreamEngine::~StreamEngine() {

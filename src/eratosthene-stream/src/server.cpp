@@ -16,9 +16,10 @@
 const char * usage_message = "Usage:\n"
                              "  $ eratosthene-stream [PARAMETERS]\n"
                              "Parameters:\n"
-                             "  \x1b[1m-h\x1b[0m                 Displays this message\n"
-                             "  \x1b[1m-s\x1b[0m STREAM_PORT     The port on which the stream server should run (mandatory)\n"
-                             "  \x1b[1m-d\x1b[0m DATA_SERVER_IP  The data server to which the stream server should fetch the data (mandatory)\n";
+                             "  \x1b[1m-h\x1b[0m                   Displays this message\n"
+                             "  \x1b[1m-s\x1b[0m STREAM_PORT       The port on which the stream server should run (mandatory)\n"
+                             "  \x1b[1m-d\x1b[0m DATA_SERVER_IP    The data server's ip to which the stream server should fetch the data (mandatory)\n"
+                             "  \x1b[1m-d\x1b[0m DATA_SERVER_PORT  The data server's port to which the stream server should fetch the data (mandatory)\n";
 
 int main(int argc, char **argv) {
     int args;
@@ -83,9 +84,16 @@ void StreamServer::setup_server(int server_port, const unsigned char * data_serv
                       std::shared_ptr<ix::ConnectionState> connectionState) {
                 // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
 
-                // create a private engine for this new connection
-                auto engine = std::make_shared<StreamEngine>(data_server_ip, data_server_port);
-
+                // create a dedicated engine for this new connection
+                std::shared_ptr<StreamEngine> engine;
+                try {
+                    engine = std::make_shared<StreamEngine>(data_server_ip, data_server_port);
+                } catch (const std::exception& e) {
+                    webSocket->setOnMessageCallback([](const ix::WebSocketMessagePtr &msg) {});
+                    webSocket->close(ix::WebSocketCloseConstants::kInternalErrorCode, "Internal server error");
+                    std::cerr << "Internal error when instanciating a new engine" << std::endl;
+                    return;
+                }
                 // client renderer in a new thread
                 std::thread t(main_loop, webSocket, connectionState, engine);
                 t.detach();
@@ -94,7 +102,7 @@ void StreamServer::setup_server(int server_port, const unsigned char * data_serv
                 webSocket->setOnMessageCallback([connectionState, engine](const ix::WebSocketMessagePtr &msg) {
                     if (!connectionState->isTerminated() && msg->type == ix::WebSocketMessageType::Message) {
                         try {
-                        // parse json
+                            // parse json
                             auto j = nlohmann::json::parse(msg.get()->str.data());
                             // @TODO check that json is consistent on what is expected
 

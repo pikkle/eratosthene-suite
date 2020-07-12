@@ -3,12 +3,10 @@ let connect = function() {
     let port = document.getElementById("portInput").value;
     let address = "ws://127.0.0.1:" + port.toString() + "/stream";
     let socket = new WebSocket(address);
-    // if (socket.CLOSED) {
-    //     document.getElementById("connectButton").disabled = false;
-    // }
     let factor = 0.5;
 
     socket.onerror = function(error) {
+        console.error("Socket connection error: ");
         console.error(error);
         document.getElementById("connectButton").disabled = false;
     }
@@ -20,10 +18,12 @@ let connect = function() {
 
         this.onclose = function(event) {
             console.log("Connection closed");
+            document.getElementById("connectButton").disabled = false;
         }
 
         this.onmessage = function(event) {
             console.log("Message received");
+            console.log(event.data);
             // @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
             update_image(event.data);
             // this.close();
