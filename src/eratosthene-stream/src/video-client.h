@@ -25,7 +25,7 @@ public:
      * Constructor of a video client. Initiate an instance of vulkan engine, a data client that connects to the data
      * server and (in the @FUTURE) a video stream server to send image frames through the network
      */
-    VideoClient();
+    VideoClient(const unsigned char * const data_server_ip, int data_server_port);
 
     /**
      * Destructor of video client. Release the GPU from an engine, closes the data socket and (in the @FUTURE) closes
@@ -50,9 +50,27 @@ public:
      */
     void handle_message(const ix::WebSocketMessagePtr &msg, std::shared_ptr<ix::ConnectionState> connectionState);
 private:
-    std::shared_ptr<VideoEngine> vc_video_engine; // The video engine responsible to handle the GPU rendering on the server machine
-    std::shared_ptr<DataClient> vc_data_client; // The data client responsible to fetch data from the data server
-    std::shared_ptr<VideoStreamer> vc_video_streamer; // The video streamer responsible to send image frames on the web using appropriate codecs
+    VideoEngine vc_video_engine; // The video engine responsible to handle the GPU rendering on the server machine
+    DataClient vc_data_client; // The data client responsible to fetch data from the data server
+    VideoStreamer vc_video_streamer; // The video streamer responsible to send image frames on the web using appropriate codecs
+
+
+
+    le_enum_t  cl_loops; // Execution state
+
+    er_model_t cl_model; // Model sub-module structure
+
+    er_view_t  cl_view; // Active point of view
+    er_view_t  cl_push; // Pushed point of view
+    le_time_t  cl_last; // Delayed model update clock
+
+    le_size_t  cl_x; // Mouse click x-position - according to screen
+    le_size_t  cl_y; // Mouse click y-position - according to screen
+    le_real_t  cl_inertia; // Motion inertial factor
+
+    le_real_t  cl_scale; // Overall model dynamical scale value
+
+    le_enum_t _status; // Standard status field
 };
 
 #endif

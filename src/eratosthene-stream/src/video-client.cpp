@@ -6,11 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
-VideoClient::VideoClient() {
-    vc_video_engine = std::make_shared<VideoEngine>();
-    vc_data_client = std::make_shared<DataClient>();
-    // @TODO: instanciate video streamer
-
+VideoClient::VideoClient(const unsigned char * const data_server_ip, int data_server_port) :
+        vc_data_client(data_server_ip, data_server_port) {
 }
 
 VideoClient::~VideoClient() {
@@ -25,7 +22,7 @@ void VideoClient::handle_message(const ix::WebSocketMessagePtr &msg,
             // @TODO check that json is consistent on what is expected
 
             // create transform of the scene to pass to the engine for further frames redraw
-            // @TODO update client_view depending on the inputs received in the json
+            // @TODO update er_client_view depending on the inputs received in the json
             // Ex:
             // float rotation = (float) j["rotate_x"];
         } catch (std::exception &e) {
@@ -57,7 +54,7 @@ void VideoClient::rendering_loop(std::shared_ptr<ix::WebSocket> webSocket,
 
                               // render the image and output it to memory
                               VkSubresourceLayout layout;
-                              vc_video_engine->draw_frame(outputImage, layout);
+                              vc_video_engine.draw_frame(outputImage, layout);
 
                               // encode image for web
                               // @TODO: use a dedicated streaming server with performant codecs to send the frames

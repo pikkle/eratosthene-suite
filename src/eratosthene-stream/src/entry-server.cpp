@@ -1,8 +1,6 @@
 #include "entry-server.h"
 
-#include <vector>
-#include <thread>
-#include <regex>
+#include <memory>
 
 #include <unistd.h>
 
@@ -63,9 +61,6 @@ void EntryServer::setup_server(int server_port, const unsigned char * data_serve
     ix::WebSocketServer er_server_ws(server_port, STREAM_ADDRESS);
     std::cout << "Listening on " << server_port << std::endl;
 
-    // setup data server for all clients
-    DataClient::set_data_server(data_server_ip, data_server_port);
-
     // server main loop to allow connections
     er_server_ws.setOnConnectionCallback(
             [&er_server_ws, data_server_ip, data_server_port](std::shared_ptr<ix::WebSocket> webSocket,
@@ -73,7 +68,7 @@ void EntryServer::setup_server(int server_port, const unsigned char * data_serve
                 // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
 
                 // create a private client for this new connection
-                auto client = std::make_shared<VideoClient>();
+                auto client = std::make_shared<VideoClient>(data_server_ip, data_server_port);
 
                 // client renderer in a new thread
                 client->rendering_loop(webSocket, connectionState);

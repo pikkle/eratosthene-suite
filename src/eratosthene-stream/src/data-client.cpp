@@ -1,17 +1,14 @@
+#include <stdexcept>
 #include "data-client.h"
 
-DataClient::DataClient() {
-    // @TODO use preexisting code from eratosthene-client program
+DataClient::DataClient(const unsigned char *const data_server_ip, int data_server_port) {
+    if ((cl_socket = le_client_create(data_server_ip, data_server_port)) == _LE_SOCK_NULL) {
+        throw std::runtime_error("Error while opening socket to the data server");
+    }
+
     // @TODO loop updating model data
 }
 
 DataClient::~DataClient() {
     // @TODO close socket
 }
-
-void DataClient::set_data_server(const unsigned char *data_server_ip, int data_server_port) {
-    DataClient::data_server_ip = (unsigned char *) data_server_ip;
-    DataClient::data_server_port = data_server_port;
-}
-
-
