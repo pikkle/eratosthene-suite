@@ -6,7 +6,6 @@ let connect = function() {
     let factor = 0.5;
 
     socket.onerror = function(error) {
-        console.error("Socket connection error: ");
         console.error(error);
         document.getElementById("connectButton").disabled = false;
     }
@@ -16,14 +15,8 @@ let connect = function() {
         var s = this;
         console.log("Connection opened");
 
-        this.onclose = function(event) {
-            console.log("Connection closed");
-            document.getElementById("connectButton").disabled = false;
-        }
-
         this.onmessage = function(event) {
             console.log("Message received");
-            console.log(event.data);
             // @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
             update_image(event.data);
             // this.close();

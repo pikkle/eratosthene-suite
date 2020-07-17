@@ -35,8 +35,6 @@ set_target_properties (eratosthene PROPERTIES IMPORTED_LOCATION ${install_dir}/l
 
 # include head-files libraries
 include_directories("include")
-include_directories("${CMAKE_BINARY_DIR}/libcommon/include")
-include_directories("${CMAKE_BINARY_DIR}/liberatosthene/include")
 add_subdirectory("include/IXWebSocket")
 
 include_directories("../eratosthene-address/src")
@@ -56,10 +54,13 @@ set(COMPILED_RESOURCES
         )
 
 set(HEADERS
-        src/engine.h
+        src/entry-server.h
+        src/video-client.h
+        src/video-engine.h
+        src/video-streamer.h
+        src/data-client.h
         src/models.h
         src/utils.h
-        src/server.h
         )
 
 set(EXTERNAL_HEADERS
@@ -72,8 +73,10 @@ set(EXTERNAL_HEADERS
         )
 
 set(SOURCES
-        src/engine.cpp
-        src/server.cpp
+        src/entry-server.cpp
+        src/video-client.cpp
+        src/data-client.cpp
+        src/video-engine.cpp
         src/utils.cpp)
 
 

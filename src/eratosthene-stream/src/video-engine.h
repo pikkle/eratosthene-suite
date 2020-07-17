@@ -1,5 +1,5 @@
-#ifndef ERATOSTHENE_STREAM_ENGINE_H
-#define ERATOSTHENE_STREAM_ENGINE_H
+#ifndef ERATOSTHENE_STREAM_VIDEO_ENGINE_H
+#define ERATOSTHENE_STREAM_VIDEO_ENGINE_H
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -16,14 +16,15 @@ using namespace StreamUtils;
 typedef const std::vector<Vertex> Vertices;
 typedef const std::vector<uint32_t> Indices;
 
+// @TODO: change size depending on the client's resolution (with some max resolution TBD)
 const int WIDTH = 1600;
 const int HEIGHT = 1200;
 const float FPS = 60.f; // @TODO: adapt the frames rendered based on target FPS
 
-class StreamEngine {
+class VideoEngine {
 public:
-    StreamEngine(const unsigned char * data_server_ip, int data_server_port);
-    ~StreamEngine();
+    VideoEngine();
+    ~VideoEngine();
     void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     static const size_t er_imagedata_size;
@@ -37,7 +38,6 @@ private:
     static void create_instance();
     static void create_phys_device();
 
-    le_sock_t dt_socket;
     Vertices dt_vertices = {{.pos = {0, 0, 0}, .color = {1, 0, 0}},};
     Indices dt_triangles = {};
     Indices dt_lines = {};

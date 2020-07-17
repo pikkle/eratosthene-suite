@@ -2,7 +2,6 @@
 #include <stdexcept>
 #include <cstdint>
 #include <vector>
-#include <chrono>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -11,7 +10,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "engine.h"
+#include "video-engine.h"
 
 
 const char* SHADER_VERT_FILE = "shaders/shader.vert.spv";
@@ -27,18 +26,13 @@ const std::vector<const char *> extensions = {
 
 /* ----------- Vulkan setup methods ------------ */
 
-VkInstance StreamEngine::vk_instance = nullptr;
-VkPhysicalDevice StreamEngine::vk_phys_device = nullptr;
-const size_t StreamEngine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
+VkInstance VideoEngine::vk_instance = nullptr;
+VkPhysicalDevice VideoEngine::vk_phys_device = nullptr;
+const size_t VideoEngine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
 
 
-StreamEngine::StreamEngine(const unsigned char * const data_server_ip, int data_server_port) {
-    dt_socket = le_client_create(data_server_ip, data_server_port);
-    if (dt_socket == _LE_SOCK_NULL) {
-        throw std::runtime_error("Could not connect to data server");
-    }
-
-    if (!StreamEngine::vk_instance && !vk_phys_device) {
+VideoEngine::VideoEngine() {
+    if (!VideoEngine::vk_instance && !vk_phys_device) {
         create_instance();
         create_phys_device();
     }
@@ -55,13 +49,13 @@ StreamEngine::StreamEngine(const unsigned char * const data_server_ip, int data_
     create_command_buffers();
 }
 
-StreamEngine::~StreamEngine() {
-    // TODO: free up all vulkan objects
+VideoEngine::~VideoEngine() {
+    // @TODO: free up all vulkan objects
     std::cerr << "Freeing up a engine instance..." << std::endl;
 }
 
 
-void StreamEngine::create_instance() {
+void VideoEngine::create_instance() {
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "Eratosthene-stream",
@@ -94,7 +88,7 @@ void StreamEngine::create_instance() {
                    "failed to create instance!");
 }
 
-void StreamEngine::create_phys_device() {
+void VideoEngine::create_phys_device() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(vk_instance, &deviceCount, nullptr);
     TEST_ASSERT(deviceCount > 0, "failed to find GPUs with Vulkan support!");
@@ -117,7 +111,7 @@ void StreamEngine::create_phys_device() {
     TEST_ASSERT(vk_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
 }
 
-void StreamEngine::setup_debugger() {
+void VideoEngine::setup_debugger() {
     VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
         .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
@@ -129,7 +123,7 @@ void StreamEngine::setup_debugger() {
                    "error while creating debug reporter");
 }
 
-void StreamEngine::create_device() {
+void VideoEngine::create_device() {
     uint32_t queueFamilyCount;
     vkGetPhysicalDeviceQueueFamilyProperties(vk_phys_device, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
@@ -177,7 +171,7 @@ void StreamEngine::create_device() {
     vkGetDeviceQueue(vk_device, vk_transfer_queue_family_index, 0, &vk_transfer_queue);
 }
 
-void StreamEngine::create_command_pool() {
+void VideoEngine::create_command_pool() {
     VkCommandPoolCreateInfo cmdPoolInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -188,7 +182,7 @@ void StreamEngine::create_command_pool() {
     TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating graphics command pool");
 }
 
-void StreamEngine::bind_data() {
+void VideoEngine::bind_data() {
     BufferWrap stagingWrap;
     VkDeviceSize vertexBufferSize = dt_vertices.size() * sizeof(Vertex);
     VkDeviceSize triangleBufferSize = dt_triangles.size() * sizeof(uint32_t);
@@ -245,7 +239,7 @@ void StreamEngine::bind_data() {
     }
 }
 
-void StreamEngine::create_attachments() {
+void VideoEngine::create_attachments() {
     // Color attachment
     create_attachment(
             vk_color_attachment,
@@ -269,7 +263,7 @@ void StreamEngine::create_attachments() {
 
 }
 
-void StreamEngine::create_render_pass() {
+void VideoEngine::create_render_pass() {
     std::array<VkAttachmentDescription, 2> attchmentDescriptions = {
         // Color attachment
         VkAttachmentDescription {
@@ -348,7 +342,7 @@ void StreamEngine::create_render_pass() {
     TEST_VK_ASSERT(vkCreateFramebuffer(vk_device, &framebufferCreateInfo, nullptr, &vk_framebuffer), "error while creating framebuffer");
 }
 
-void StreamEngine::create_pipeline() {
+void VideoEngine::create_pipeline() {
     VkDescriptorSetLayoutBinding uboLayoutBinding = {
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -495,7 +489,7 @@ void StreamEngine::create_pipeline() {
     }
 }
 
-void StreamEngine::create_command_buffers() {
+void VideoEngine::create_command_buffers() {
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = vk_graphics_command_pool,
@@ -559,7 +553,7 @@ void StreamEngine::create_command_buffers() {
     TEST_VK_ASSERT(vkEndCommandBuffer(vk_command_buffer), "failed to record command buffer!");
 }
 
-void StreamEngine::create_descriptor_set() {
+void VideoEngine::create_descriptor_set() {
     VkDescriptorPoolSize poolSize = {
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = 1,
@@ -610,7 +604,7 @@ void StreamEngine::create_descriptor_set() {
 
 /* --------- Vulkan rendering methods --------- */
 
-void StreamEngine::update_uniform_buffers() {
+void VideoEngine::update_uniform_buffers() {
     auto eye = glm::vec3(0.f, 1.f, 1.f);
     auto center = glm::vec3(0.0f, 0.0f, 0.f);
     auto rotation = glm::rotate(glm::mat4(1.0f), glm::radians(0.f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -632,14 +626,14 @@ void StreamEngine::update_uniform_buffers() {
     vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
 }
 
-void StreamEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
+void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
     update_uniform_buffers();
     submit_work(vk_command_buffer, vk_graphics_queue);
     vkDeviceWaitIdle(vk_device);
     output_result(imagedata, subresourceLayout);
 }
 
-void StreamEngine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
+void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
     VkImage copyImage;
     VkMemoryRequirements memRequirements;
     VkDeviceMemory dstImageMemory;
@@ -745,7 +739,7 @@ void StreamEngine::output_result(char* imagedata, VkSubresourceLayout subresourc
 
 /* --------------- Helper methods --------------- */
 
-inline void StreamEngine::submit_work(VkCommandBuffer cmd, VkQueue queue) {
+inline void VideoEngine::submit_work(VkCommandBuffer cmd, VkQueue queue) {
     VkSubmitInfo submitInfo = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .commandBufferCount = 1,
@@ -762,7 +756,7 @@ inline void StreamEngine::submit_work(VkCommandBuffer cmd, VkQueue queue) {
     vkDestroyFence(vk_device, fence, nullptr);
 }
 
-inline uint32_t StreamEngine::get_memtype_index(uint32_t typeBits, VkMemoryPropertyFlags properties) {
+inline uint32_t VideoEngine::get_memtype_index(uint32_t typeBits, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(vk_phys_device, &deviceMemoryProperties);
     for (uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; i++) {
@@ -774,7 +768,7 @@ inline uint32_t StreamEngine::get_memtype_index(uint32_t typeBits, VkMemoryPrope
     return 0;
 }
 
-inline void StreamEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data) {
+inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data) {
     VkBufferCreateInfo bufferCreateInfo {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = size,
@@ -802,7 +796,7 @@ inline void StreamEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryP
     TEST_VK_ASSERT(vkBindBufferMemory(vk_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
 }
 
-inline void StreamEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
+inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
     VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             .commandPool = vk_transfer_command_pool,
@@ -827,7 +821,7 @@ inline void StreamEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &staging
     vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
 }
 
-inline VkFormat StreamEngine::find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
+inline VkFormat VideoEngine::find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
     for (auto& format : candidates) {
         VkFormatProperties formatProps;
         vkGetPhysicalDeviceFormatProperties(vk_phys_device, format, &formatProps);
@@ -838,7 +832,7 @@ inline VkFormat StreamEngine::find_supported_format(const std::vector<VkFormat> 
     throw std::runtime_error("failed to find supported format!");
 }
 
-inline void StreamEngine::create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect) {
+inline void VideoEngine::create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect) {
     VkImageCreateInfo imageInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
@@ -879,7 +873,7 @@ inline void StreamEngine::create_attachment(Attachment &att, VkImageUsageFlags i
     TEST_VK_ASSERT(vkCreateImageView(vk_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
 }
 
-inline VkShaderModule StreamEngine::create_shader_module(const std::vector<char> &code) {
+inline VkShaderModule VideoEngine::create_shader_module(const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .codeSize = code.size(),
@@ -891,8 +885,8 @@ inline VkShaderModule StreamEngine::create_shader_module(const std::vector<char>
     return shaderModule;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL StreamEngine::debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
-                                                            uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL VideoEngine::debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
+                                                           uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
     fprintf(stderr, "[VALIDATION]: %s - %s\n", pLayerPrefix, pMessage);
     return VK_FALSE;
 }
