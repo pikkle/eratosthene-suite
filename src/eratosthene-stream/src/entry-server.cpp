@@ -50,13 +50,13 @@ int main(int argc, char **argv) {
         exit(-1);
     }
 
-    const auto* data_server_ip = reinterpret_cast<unsigned char *>(_data_server_ip);
+    auto* data_server_ip = reinterpret_cast<unsigned char *>(_data_server_ip);
     EntryServer::setup_server(stream_port, data_server_ip, data_server_port);
 }
 
 /* ----------- Broadcasting methods ----------- */
 
-void EntryServer::setup_server(int server_port, const unsigned char * data_server_ip, int data_server_port) {
+void EntryServer::setup_server(int server_port, unsigned char * data_server_ip, int data_server_port) {
     // @TODO: enable websocket deflate per message
     ix::WebSocketServer er_server_ws(server_port, STREAM_ADDRESS);
     std::cout << "Listening on " << server_port << std::endl;

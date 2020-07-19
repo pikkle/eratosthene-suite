@@ -25,7 +25,7 @@ public:
      * Constructor of a video client. Initiate an instance of vulkan engine, a data client that connects to the data
      * server and (in the @FUTURE) a video stream server to send image frames through the network
      */
-    VideoClient(const unsigned char * const data_server_ip, int data_server_port);
+    VideoClient(unsigned char * const data_server_ip, int data_server_port);
 
     /**
      * Destructor of video client. Release the GPU from an engine, closes the data socket and (in the @FUTURE) closes

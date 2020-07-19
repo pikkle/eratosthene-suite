@@ -6,7 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
-VideoClient::VideoClient(const unsigned char * const data_server_ip, int data_server_port) :
+VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port) :
         vc_data_client(data_server_ip, data_server_port) {
 }
 

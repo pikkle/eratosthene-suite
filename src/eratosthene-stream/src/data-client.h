@@ -5,7 +5,7 @@
 
 class DataClient {
 public:
-    DataClient(const unsigned char * const data_server_ip, int data_server_port);
+    DataClient(unsigned char * const data_server_ip, int data_server_port);
     ~DataClient();
 
 private:
