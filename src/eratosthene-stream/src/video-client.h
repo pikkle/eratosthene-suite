@@ -58,9 +58,9 @@ private:
 
     le_enum_t  cl_loops; // Execution state
 
-    er_model_t cl_model; // Model sub-module structure
+    std::shared_ptr<er_model_t> cl_model; // Model sub-module structure
 
-    er_view_t  cl_view; // Active point of view
+    std::shared_ptr<er_view_t>  cl_view; // Active point of view
     er_view_t  cl_push; // Pushed point of view
     le_time_t  cl_last; // Delayed model update clock
 

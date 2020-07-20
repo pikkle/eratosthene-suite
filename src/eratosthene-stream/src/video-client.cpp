@@ -8,6 +8,7 @@
 
 VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port) :
         vc_data_client(data_server_ip, data_server_port) {
+    cl_model = vc_data_client.get_model();
 }
 
 VideoClient::~VideoClient() {
