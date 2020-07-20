@@ -71,7 +71,10 @@ void EntryServer::setup_server(int server_port, unsigned char * data_server_ip, 
                 auto client = std::make_shared<VideoClient>(data_server_ip, data_server_port);
 
                 // client renderer in a new thread
-                client->rendering_loop(webSocket, connectionState);
+                client->loops_render(webSocket, connectionState);
+
+                // client data fetch in a new thread
+                client->loops_update(connectionState);
 
                 // handle client messages (commands to transform the view)
                 webSocket->setOnMessageCallback([connectionState, client](const ix::WebSocketMessagePtr &msg) {

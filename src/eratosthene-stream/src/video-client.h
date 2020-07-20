@@ -38,9 +38,15 @@ public:
      * @param webSocket The websocket used for communication with the webclient (should be removed in the @FUTURE)
      * @param connectionState
      */
-    void rendering_loop(std::shared_ptr<ix::WebSocket> webSocket,
-                        std::shared_ptr<ix::ConnectionState> connectionState);
+    void loops_render(std::shared_ptr<ix::WebSocket> webSocket,
+                      std::shared_ptr<ix::ConnectionState> connectionState);
 
+
+    /**
+     * Creates a separate thread that automatically refresh data to be displayed
+     */
+    void loops_update(std::shared_ptr<ix::ConnectionState> connectionState,
+            le_size_t delay = 0);
 
     /**
      * Handles a received message through websocket. Updates internal data of the data client and video engine to
@@ -54,10 +60,6 @@ private:
     DataClient vc_data_client; // The data client responsible to fetch data from the data server
     VideoStreamer vc_video_streamer; // The video streamer responsible to send image frames on the web using appropriate codecs
 
-
-
-    le_enum_t  cl_loops; // Execution state
-
     std::shared_ptr<er_model_t> cl_model; // Model sub-module structure
 
     std::shared_ptr<er_view_t>  cl_view; // Active point of view
@@ -69,8 +71,6 @@ private:
     le_real_t  cl_inertia; // Motion inertial factor
 
     le_real_t  cl_scale; // Overall model dynamical scale value
-
-    le_enum_t _status; // Standard status field
 };
 
 #endif
