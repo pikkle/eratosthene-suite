@@ -414,6 +414,7 @@
 
     }
 
+#ifndef ERATOSTHENE_STREAM
 /*
     source - display methods
  */
@@ -429,6 +430,7 @@
         le_real_t er_sinl = sin( - er_lon * LE_D2R );
         le_real_t er_cosa = cos( + er_lat * LE_D2R );
         le_real_t er_sina = sin( + er_lat * LE_D2R );
+
 
         /* motion management - tilt rotation */
         glRotated( - er_view_get_gam( er_view ), 1.0, 0.0, 0.0 );
@@ -504,3 +506,4 @@
 
     }
 
+#endif

@@ -109,6 +109,8 @@
 
     }
 
+#ifndef ERATOSTHENE_STREAM
+
     le_void_t er_cell_get_render( er_cell_t * const er_cell, le_real_t const er_lon, le_real_t const er_lat, le_real_t const er_cosl, le_real_t const er_sinl, le_real_t const er_cosa, le_real_t const er_sina ) {
 
         /* buffer pointer variable */
@@ -196,6 +198,8 @@
         }
 
     }
+
+#endif
 
 /*
     source - mutator methods
