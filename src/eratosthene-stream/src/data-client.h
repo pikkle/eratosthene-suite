@@ -12,14 +12,19 @@ public:
     ~DataClient();
     std::shared_ptr<er_model_t> get_model() { return cl_model; }
 
+    bool update_model(const er_view_t* view, le_size_t delay);
+
 private:
     void set_server();
 
     std::shared_ptr<er_model_t> cl_model; // Model sub-module structure
 
-    le_sock_t cl_socket; // Socket toward remote server - main connection
-    le_size_t cl_scfg; // Remote server spatial configuration parameter
-    le_time_t cl_tcfg; // Remote server temporal configuration parameter
+    le_sock_t dc_socket; // Socket toward remote server - main connection
+    le_size_t dc_scfg; // Remote server spatial configuration parameter
+    le_time_t dc_tcfg; // Remote server temporal configuration parameter
+
+    er_view_t  dc_push; // Pushed point of view
+    le_time_t  dc_last; // Delayed model update clock
 };
 
 #endif

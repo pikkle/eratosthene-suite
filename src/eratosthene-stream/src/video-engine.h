@@ -6,6 +6,7 @@
 
 #include <eratosthene-client-model.h>
 #include <eratosthene-client-view.h>
+#include <memory>
 
 #include "models.h"
 #include "utils.h"
@@ -13,8 +14,8 @@
 using namespace StreamModels;
 using namespace StreamUtils;
 
-typedef const std::vector<Vertex> Vertices;
-typedef const std::vector<uint32_t> Indices;
+typedef std::vector<Vertex> Vertices;
+typedef std::vector<uint32_t> Indices;
 
 // @TODO: change size depending on the client's resolution (with some max resolution TBD)
 const int WIDTH = 1600;
@@ -23,11 +24,13 @@ const float FPS = 60.f; // @TODO: adapt the frames rendered based on target FPS
 
 class VideoEngine {
 public:
-    VideoEngine();
+    VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_view_t> ptr);
     ~VideoEngine();
     void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     static const size_t er_imagedata_size;
+
+    void bind_data();
 
 private:
     /* Shared vulkan objects among all engines running */
@@ -37,6 +40,9 @@ private:
 
     static void create_instance();
     static void create_phys_device();
+
+    std::shared_ptr<er_model_t> cl_model;
+    std::shared_ptr<er_view_t> cl_view;
 
     Vertices dt_vertices = {{.pos = {0, 0, 0}, .color = {1, 0, 0}},};
     Indices dt_triangles = {};
@@ -75,7 +81,8 @@ private:
     void setup_debugger();
     void create_device();
     void create_command_pool();
-    void bind_data();
+    void fetch_data();
+
     void create_pipeline();
     void create_descriptor_set();
     void create_attachments();

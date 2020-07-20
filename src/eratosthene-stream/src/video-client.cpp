@@ -6,10 +6,11 @@
 
 #include <nlohmann/json.hpp>
 
-VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port) :
-        vc_data_client(data_server_ip, data_server_port) {
-    cl_model = vc_data_client.get_model();
+VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port) {
+    vc_data_client = new DataClient(data_server_ip, data_server_port);
+    cl_model = vc_data_client->get_model();
     cl_view = std::make_shared<er_view_t>((er_view_t) ER_VIEW_D);
+    vc_video_engine = new VideoEngine(vc_data_client->get_model(), cl_view);
 }
 
 VideoClient::~VideoClient() {
@@ -56,7 +57,7 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
 
                               // render the image and output it to memory
                               VkSubresourceLayout layout;
-                              vc_video_engine.draw_frame(outputImage, layout);
+                              vc_video_engine->draw_frame(outputImage, layout);
 
                               // encode image for web
                               // @TODO: use a dedicated streaming server with performant codecs to send the frames
@@ -82,34 +83,9 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
 
 void VideoClient::loops_update(std::shared_ptr<ix::ConnectionState> connectionState, le_size_t delay) {
     std::thread t([this, delay, connectionState]() {
-        le_address_t er_address = LE_ADDRESS_C;
-
         while (!connectionState->isTerminated()) {
-            /* motion detection */
-            if (!er_view_get_equal(&cl_push, &*cl_view)) {
-                cl_push = *cl_view;
-                cl_last = clock();
-            }
-
-            if ((clock() - cl_last) > delay) {
-                /* retreive address times */
-                er_address = er_view_get_times(&*cl_view);
-                /* prepare model update */
-                er_model_set_prep(&*cl_model);
-                /* update model target */
-                er_model_set_enum(&*cl_model, &er_address, 0, &*cl_view);
-                /* model/target fast synchronisation */
-                er_model_set_fast(&*cl_model);
-                /* target content detection */
-                er_model_set_detect(&*cl_model);
-                /* reset motion time */
-                cl_last = _LE_TIME_MAX;
-            }
-
-            if (!er_model_get_sync( & *cl_model )) {
-                /* model synchronisation process */
-                er_model_set_sync( & *cl_model );
-                auto model_cp = *cl_model;
+            if (vc_data_client->update_model(&*cl_view, delay)) {
+                vc_video_engine->bind_data();
             }
         }
     });

@@ -56,15 +56,13 @@ public:
      */
     void handle_message(const ix::WebSocketMessagePtr &msg, std::shared_ptr<ix::ConnectionState> connectionState);
 private:
-    VideoEngine vc_video_engine; // The video engine responsible to handle the GPU rendering on the server machine
-    DataClient vc_data_client; // The data client responsible to fetch data from the data server
-    VideoStreamer vc_video_streamer; // The video streamer responsible to send image frames on the web using appropriate codecs
+    VideoEngine *vc_video_engine; // The video engine responsible to handle the GPU rendering on the server machine
+    DataClient *vc_data_client; // The data client responsible to fetch data from the data server
+    VideoStreamer *vc_video_streamer; // The video streamer responsible to send image frames on the web using appropriate codecs
 
     std::shared_ptr<er_model_t> cl_model; // Model sub-module structure
 
     std::shared_ptr<er_view_t>  cl_view; // Active point of view
-    er_view_t  cl_push; // Pushed point of view
-    le_time_t  cl_last; // Delayed model update clock
 
     le_size_t  cl_x; // Mouse click x-position - according to screen
     le_size_t  cl_y; // Mouse click y-position - according to screen

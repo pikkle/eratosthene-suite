@@ -31,7 +31,8 @@ VkPhysicalDevice VideoEngine::vk_phys_device = nullptr;
 const size_t VideoEngine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
 
 
-VideoEngine::VideoEngine() {
+VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_view_t> view)
+        : cl_model(model), cl_view(view) {
     if (!VideoEngine::vk_instance && !vk_phys_device) {
         create_instance();
         create_phys_device();
@@ -182,7 +183,42 @@ void VideoEngine::create_command_pool() {
     TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating graphics command pool");
 }
 
+void VideoEngine::fetch_data() {
+    // Temporarily reclean all the time data to be display
+    // @TODO @OPTIM only remove data that is not anymore shown and only add fresh data
+    dt_vertices.clear();
+    dt_points.clear();
+    dt_lines.clear();
+    dt_triangles.clear();
+
+    auto v = *cl_model;
+    int p = 0;
+    for ( le_size_t er_parse = 0; er_parse < cl_model->md_size; er_parse ++ ) {
+        auto cell = cl_model->md_cell + er_parse;
+        auto base = le_array_get_byte(& cell->ce_data );
+
+        /* display cell points */
+        if (cell->ce_type[0] != 0) {
+            auto pos = base;
+            auto col = pos + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
+            Vertex v = {
+                    .pos = {pos[0], pos[1], pos[2]},
+                    .color = {col[0], col[1], col[2]}
+            };
+            dt_vertices.push_back(v);
+            dt_points.push_back(p++);
+            std::cout << v.pos[0] << ", " << v.pos[1] << ", " <<v.pos[2] << std::endl;
+        }
+
+        else if ((cell->ce_type[1] | cell->ce_type[2]) != 0 ) {
+            continue;
+        }
+    }
+}
+
 void VideoEngine::bind_data() {
+    fetch_data();
+
     BufferWrap stagingWrap;
     VkDeviceSize vertexBufferSize = dt_vertices.size() * sizeof(Vertex);
     VkDeviceSize triangleBufferSize = dt_triangles.size() * sizeof(uint32_t);
@@ -528,10 +564,11 @@ void VideoEngine::create_command_buffers() {
     vkCmdSetViewport(vk_command_buffer, 0, 1, &viewport);
     VkRect2D scissor = {.extent = {WIDTH, HEIGHT},};
 
-    vkCmdSetScissor(vk_command_buffer, 0, 1, &scissor);
-    vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_layout, 0, 1, &vk_descriptor_set, 0, nullptr);
-    vkCmdBindVertexBuffers(vk_command_buffer, 0, 1, vertexBuffers, offsets);
-
+    if (!dt_vertices.empty()) {
+        vkCmdSetScissor(vk_command_buffer, 0, 1, &scissor);
+        vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_layout, 0, 1, &vk_descriptor_set, 0, nullptr);
+        vkCmdBindVertexBuffers(vk_command_buffer, 0, 1, vertexBuffers, offsets);
+    }
     if (!dt_triangles.empty()) {
         vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_triangles);
         vkCmdBindIndexBuffer(vk_command_buffer, vk_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
