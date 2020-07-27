@@ -30,7 +30,8 @@ public:
 
     static const size_t er_imagedata_size;
 
-    void bind_data();
+    void update_internal_data();
+    void update_uniform_buffers();
 
 private:
     /* Shared vulkan objects among all engines running */
@@ -44,10 +45,10 @@ private:
     std::shared_ptr<er_model_t> cl_model;
     std::shared_ptr<er_view_t> cl_view;
 
-    Vertices dt_vertices = {{.pos = {0, 0, 0}, .color = {1, 0, 0}},};
+    Vertices dt_vertices = {};
     Indices dt_triangles = {};
     Indices dt_lines = {};
-    Indices dt_points = {0};
+    Indices dt_points = {};
 
     VkDevice vk_device;
     VkDebugReportCallbackEXT vk_debug_report;
@@ -88,7 +89,7 @@ private:
     void create_attachments();
     void create_render_pass();
     void create_command_buffers();
-    void update_uniform_buffers();
+
     void output_result(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     /* Helper methods */

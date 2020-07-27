@@ -42,7 +42,7 @@ VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_v
 #endif
     create_device();
     create_command_pool();
-    bind_data();
+    update_internal_data();
     create_attachments();
     create_render_pass();
     create_pipeline();
@@ -184,6 +184,7 @@ void VideoEngine::create_command_pool() {
 }
 
 void VideoEngine::fetch_data() {
+//    std::cout << "fetching new data " << std::endl;
     // Temporarily reclean all the time data to be display
     // @TODO @OPTIM only remove data that is not anymore shown and only add fresh data
     dt_vertices.clear();
@@ -191,32 +192,39 @@ void VideoEngine::fetch_data() {
     dt_lines.clear();
     dt_triangles.clear();
 
-    auto v = *cl_model;
     int p = 0;
-    for ( le_size_t er_parse = 0; er_parse < cl_model->md_size; er_parse ++ ) {
+    for ( le_size_t er_parse = 0; er_parse < cl_model->md_size; ++er_parse ) {
         auto cell = cl_model->md_cell + er_parse;
         auto base = le_array_get_byte(& cell->ce_data );
 
         /* display cell points */
-        if (cell->ce_type[0] != 0) {
-            auto pos = base;
-            auto col = pos + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
+        for (int i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
+            base += LE_ARRAY_DATA;
+            le_real_t *px, *py, *pz;
+            px = reinterpret_cast<le_real_t *>(base + 0 * sizeof(le_real_t));
+            py = reinterpret_cast<le_real_t *>(base + 1 * sizeof(le_real_t));
+            pz = reinterpret_cast<le_real_t *>(base + 2 * sizeof(le_real_t));
+
+            auto col = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
+            le_byte_t *cr, *cg, *cb;
+            cr = col + 0 * sizeof(le_byte_t);
+            cg = col + 1 * sizeof(le_byte_t);
+            cb = col + 2 * sizeof(le_byte_t);
             Vertex v = {
-                    .pos = {pos[0], pos[1], pos[2]},
-                    .color = {col[0], col[1], col[2]}
+                    .pos =   {*px, *py, *pz},
+                    .color = {(float) *cr / 255.f, (float) *cg / 255.f, (float) *cb / 255.f}
             };
+
+//            std::cerr << "{p:{" << v.pos.x << ", " << v.pos.y << ", " << v.pos.z <<
+//                         "}, c:{" << v.color.r << ", " << v.color.g << ", " << v.color.b << "}}" << std::endl;
+
             dt_vertices.push_back(v);
             dt_points.push_back(p++);
-            std::cout << v.pos[0] << ", " << v.pos[1] << ", " <<v.pos[2] << std::endl;
-        }
-
-        else if ((cell->ce_type[1] | cell->ce_type[2]) != 0 ) {
-            continue;
         }
     }
 }
 
-void VideoEngine::bind_data() {
+void VideoEngine::update_internal_data() {
     fetch_data();
 
     BufferWrap stagingWrap;
@@ -646,6 +654,13 @@ void VideoEngine::update_uniform_buffers() {
     auto center = glm::vec3(0.0f, 0.0f, 0.f);
     auto rotation = glm::rotate(glm::mat4(1.0f), glm::radians(0.f), glm::vec3(1.0f, 0.0f, 0.0f));
 
+    auto altitude = er_view_get_alt(&*cl_view);
+    auto gamma = er_view_get_gam(&*cl_view);
+    auto scale = er_geodesy_scale(altitude);
+
+    float zNear = er_geodesy_near(altitude, scale);
+    float zFar = er_geodesy_far(altitude, gamma, scale);
+
     UniformBufferObject ubo = {
             .model = rotation,
             .view = glm::lookAt(
@@ -653,7 +668,8 @@ void VideoEngine::update_uniform_buffers() {
                     center, // center
                     glm::vec3(0.0f, 0.0f, 1.0f) // up
             ),
-            .proj = glm::perspective(glm::radians(30.0f), WIDTH / (float) HEIGHT, 0.1f, 256.0f),
+            .proj = glm::perspective(
+                    glm::radians(45.0f), WIDTH / (float) HEIGHT, zNear, zFar),
     };
     ubo.proj[1][1] *= -1;
 

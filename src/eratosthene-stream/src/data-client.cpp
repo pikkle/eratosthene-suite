@@ -13,6 +13,8 @@ DataClient::DataClient(unsigned char *const data_server_ip, int data_server_port
      // setup server configuration
     set_server();
 
+    dc_push = ER_VIEW_C;
+
     // create client model
     cl_model = std::make_shared<er_model_t>(er_model_create(dc_socket, dc_scfg, dc_tcfg));
     if (!le_get_status(*cl_model)) {
@@ -83,7 +85,6 @@ bool DataClient::update_model(const er_view_t* view, le_size_t delay) {
     if (!er_model_get_sync( & *cl_model )) {
         /* model synchronisation process */
         er_model_set_sync( & *cl_model );
-
         return true;
     }
 
