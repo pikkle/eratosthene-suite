@@ -201,26 +201,40 @@ void VideoEngine::fill_data() {
     dt_lines.clear();
     dt_triangles.clear();
 
-    int p = 0;
+    uint32_t point_id = 0;
+    uint16_t cell_id = 0;
     for ( le_size_t er_parse = 0; er_parse < cl_model->md_size; ++er_parse ) {
         auto cell = cl_model->md_cell + er_parse;
         auto base = le_array_get_byte(& cell->ce_data );
 
-        /* display cell points */
-        for (int i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
+        /* iterate over data in the cell */
+        for (le_size_t i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
+            // main pointer on the vertex, and points directly to the vertex coordinates
             le_real_t *p_data = reinterpret_cast<le_real_t *>(base);
-            le_byte_t *c_data = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
-            auto scale = 1.f / 100000.f;
-            Vertex v = {
-                    .pos =   {p_data[0] * scale, p_data[1] * scale, p_data[2] * scale},
-                    .color = {(float) c_data[0] / 255.f, (float) c_data[1] / 255.f, (float) c_data[2] / 255.f}
-            };
 
-            dt_vertices.push_back(v);
-            dt_points.push_back(p++);
+            // points to the color values
+            le_byte_t *c_data = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
+
+            auto scale = 1.f / 100000.f; // @TODO: remove this debugging value as the points should be correctly placed using a transformation matrix in the shader pipeline
+
+            // gather vertex data
+            dt_vertices.push_back(Vertex{
+                    .pos =     {p_data[0] * scale, p_data[1] * scale, p_data[2] * scale},
+                    .color =   {(float) c_data[0] / 255.f, (float) c_data[1] / 255.f, (float) c_data[2] / 255.f},
+                    .cell_id = cell_id,
+            });
+            dt_points.push_back(point_id++);
+
+            // @TODO: parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
 
             base += LE_ARRAY_DATA;
         }
+
+        // only non empty cells should be kept in the subsequent pipeline
+        if (le_array_get_size(&cell->ce_data) > 0) {
+            cell_id++;
+        }
+
     }
 }
 

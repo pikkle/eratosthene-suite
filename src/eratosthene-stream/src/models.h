@@ -22,6 +22,9 @@ struct Vertex {
     /*! color of the vertex */
     glm::vec3 color;
 
+    /*! Used to identify the cell in which the vertex belongs to, in order to apply the appropriate transformation matrix */
+    uint16_t cell_id;
+
     /*!
      * A vertex binding describes at which rate to load data from memory throughout the vertices.
      * It specifies the number of bytes between data entries and whether to move to the next data
