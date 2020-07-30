@@ -180,7 +180,7 @@ void VideoEngine::create_command_pool() {
     };
     TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_graphics_command_pool), "error while creating graphics command pool");
     cmdPoolInfo.queueFamilyIndex = vk_transfer_queue_family_index;
-    TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating graphics command pool");
+    TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating transfer command pool");
 }
 
 void VideoEngine::update_internal_data() {
@@ -208,26 +208,18 @@ void VideoEngine::fill_data() {
 
         /* display cell points */
         for (int i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
-            base += LE_ARRAY_DATA;
-            le_real_t *px, *py, *pz;
-            px = reinterpret_cast<le_real_t *>(base + 0 * sizeof(le_real_t));
-            py = reinterpret_cast<le_real_t *>(base + 1 * sizeof(le_real_t));
-            pz = reinterpret_cast<le_real_t *>(base + 2 * sizeof(le_real_t));
-
-            auto col = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
-            le_byte_t *cr, *cg, *cb;
-            cr = col + 0 * sizeof(le_byte_t);
-            cg = col + 1 * sizeof(le_byte_t);
-            cb = col + 2 * sizeof(le_byte_t);
+            le_real_t *p_data = reinterpret_cast<le_real_t *>(base);
+            le_byte_t *c_data = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
             auto scale = 1.f / 100000.f;
             Vertex v = {
-                    .pos =   {*px * scale, *py * scale, *pz * scale},
-                    .color = {(float) *cr / 255.f, (float) *cg / 255.f, (float) *cb / 255.f}
+                    .pos =   {p_data[0] * scale, p_data[1] * scale, p_data[2] * scale},
+                    .color = {(float) c_data[0] / 255.f, (float) c_data[1] / 255.f, (float) c_data[2] / 255.f}
             };
 
             dt_vertices.push_back(v);
             dt_points.push_back(p++);
 
+            base += LE_ARRAY_DATA;
         }
     }
 }
@@ -869,7 +861,7 @@ inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPr
 inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
     VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = vk_transfer_command_pool,
+            .commandPool = vk_graphics_command_pool,
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
     };
@@ -885,7 +877,7 @@ inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingW
     };
     vkCmdCopyBuffer(copyCmd, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
     TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
-    submit_work(copyCmd, vk_transfer_queue);
+    submit_work(copyCmd, vk_graphics_queue);
 
     vkDestroyBuffer(vk_device, stagingWrap.buf, nullptr);
     vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
