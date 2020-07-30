@@ -21,7 +21,6 @@ DataClient::DataClient(unsigned char *const data_server_ip, int data_server_port
         throw std::runtime_error("Error while creating the data model");
     }
 
-    // @TODO loop updating model data
 }
 
 DataClient::~DataClient() {

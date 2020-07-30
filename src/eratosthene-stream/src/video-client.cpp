@@ -10,6 +10,7 @@ VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_p
     vc_data_client = new DataClient(data_server_ip, data_server_port);
     cl_model = vc_data_client->get_model();
     cl_view = std::make_shared<er_view_t>((er_view_t) ER_VIEW_D);
+    cl_view->vw_spn = ER_COMMON_USPAN;
     vc_video_engine = new VideoEngine(vc_data_client->get_model(), cl_view);
 }
 
@@ -48,12 +49,15 @@ void encode_callback(void *context, void *data, int size) {
 void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
                                std::shared_ptr<ix::ConnectionState> connectionState) {
     std::thread t([this, webSocket, connectionState]() {
-                      bool drew_once = false;
+                      er_view_t prev_view = ER_VIEW_C;
 
                       while (!connectionState->isTerminated()) {
                           // only draw new image if it has been modified since last draw
-                          if (!drew_once) { // @TODO: check if the client_view has been updated
-                              drew_once = true;
+                          if (!er_view_get_equal(&prev_view, &*cl_view) || cl_model->md_sync == _LE_FALSE) {
+                              if (cl_model->md_sync) {
+                                  prev_view = *cl_view;
+                              }
+
                               // prepare memory for image
                               char *outputImage = (char *) malloc(VideoEngine::er_imagedata_size);
 
@@ -74,9 +78,6 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
 
                               // cleanup
                               free(outputImage);
-                          } else {
-                              drew_once = false;
-                              usleep(100);
                           }
                       }
                   }
@@ -87,12 +88,12 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
 void VideoClient::loops_update(std::shared_ptr<ix::ConnectionState> connectionState, le_size_t delay) {
     std::thread t([this, delay, connectionState]() {
         while (!connectionState->isTerminated()) {
+            while (vc_data_client->update_model(&*cl_view, delay)) {
+                vc_video_engine->update_internal_data();
+            }
 
-            while (vc_data_client->update_model(&*cl_view, delay));
-            vc_video_engine->update_internal_data();
-            usleep(100);
-            std::cout << "Finished updating model..." << std::endl;
-            break;
+            connectionState->setTerminated();
+            return; // @TODO keep updating
         }
     });
     t.detach();

@@ -42,7 +42,7 @@ VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_v
 #endif
     create_device();
     create_command_pool();
-    update_internal_data();
+    bind_data();
     create_attachments();
     create_render_pass();
     create_pipeline();
@@ -183,10 +183,19 @@ void VideoEngine::create_command_pool() {
     TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating graphics command pool");
 }
 
-void VideoEngine::fetch_data() {
-//    std::cout << "fetching new data " << std::endl;
+void VideoEngine::update_internal_data() {
+    fill_data();
+    bind_data();
+    create_render_pass();
+    create_pipeline();
+    create_descriptor_set();
+    create_command_buffers();
+}
+
+void VideoEngine::fill_data() {
     // Temporarily reclean all the time data to be display
     // @TODO @OPTIM only remove data that is not anymore shown and only add fresh data
+    // @TODO unmap memory that is removed on GPU !
     dt_vertices.clear();
     dt_points.clear();
     dt_lines.clear();
@@ -210,23 +219,20 @@ void VideoEngine::fetch_data() {
             cr = col + 0 * sizeof(le_byte_t);
             cg = col + 1 * sizeof(le_byte_t);
             cb = col + 2 * sizeof(le_byte_t);
+            auto scale = 1.f / 100000.f;
             Vertex v = {
-                    .pos =   {*px, *py, *pz},
+                    .pos =   {*px * scale, *py * scale, *pz * scale},
                     .color = {(float) *cr / 255.f, (float) *cg / 255.f, (float) *cb / 255.f}
             };
 
-//            std::cerr << "{p:{" << v.pos.x << ", " << v.pos.y << ", " << v.pos.z <<
-//                         "}, c:{" << v.color.r << ", " << v.color.g << ", " << v.color.b << "}}" << std::endl;
-
             dt_vertices.push_back(v);
             dt_points.push_back(p++);
+
         }
     }
 }
 
-void VideoEngine::update_internal_data() {
-    fetch_data();
-
+void VideoEngine::bind_data() {
     BufferWrap stagingWrap;
     VkDeviceSize vertexBufferSize = dt_vertices.size() * sizeof(Vertex);
     VkDeviceSize triangleBufferSize = dt_triangles.size() * sizeof(uint32_t);
@@ -234,8 +240,8 @@ void VideoEngine::update_internal_data() {
     VkDeviceSize pointBufferSize = dt_points.size() * sizeof(uint32_t);
 
     // Vertices
-    if (dt_vertices.size() > 0) {
-        std::cerr << "Loaded " << dt_vertices.size() << " vertices in gpu memory" << std::endl;
+    if (!dt_vertices.empty()) {
+//        std::cerr << "Loaded " << dt_vertices.size() << " vertices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, vertexBufferSize, (void *) dt_vertices.data());
@@ -247,7 +253,7 @@ void VideoEngine::update_internal_data() {
 
 
     // Triangles
-    if (dt_triangles.size() > 0) {
+    if (!dt_triangles.empty()) {
         std::cerr << "Loaded " << dt_triangles.size() << " triangle indices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -259,7 +265,7 @@ void VideoEngine::update_internal_data() {
     }
 
     // Lines
-    if (dt_lines.size()) {
+    if (!dt_lines.empty()) {
         std::cerr << "Loaded " << dt_lines.size() << " line indices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -271,8 +277,8 @@ void VideoEngine::update_internal_data() {
     }
 
     // Points
-    if (dt_points.size() > 0) {
-        std::cerr << "Loaded " << dt_points.size() << " point indices in gpu memory " << std::endl;
+    if (!dt_points.empty()) {
+//        std::cerr << "Loaded " << dt_points.size() << " point indices in gpu memory " << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, pointBufferSize, (void *) dt_points.data());
@@ -652,7 +658,6 @@ void VideoEngine::create_descriptor_set() {
 void VideoEngine::update_uniform_buffers() {
     auto eye = glm::vec3(0.f, 1.f, 1.f);
     auto center = glm::vec3(0.0f, 0.0f, 0.f);
-    auto rotation = glm::rotate(glm::mat4(1.0f), glm::radians(0.f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     auto altitude = er_view_get_alt(&*cl_view);
     auto gamma = er_view_get_gam(&*cl_view);
@@ -661,15 +666,27 @@ void VideoEngine::update_uniform_buffers() {
     float zNear = er_geodesy_near(altitude, scale);
     float zFar = er_geodesy_far(altitude, gamma, scale);
 
+    auto rotation = glm::rotate(
+            glm::mat4(1.0f),
+            glm::radians(0.f),
+            glm::vec3(1.0f, 0.0f, 0.0f)
+    );
+    auto view = glm::lookAt(
+            eye, // eye
+            center, // center
+            glm::vec3(0.0f, 0.0f, 1.0f) // up
+    );
+    auto perspective = glm::perspective(
+            glm::radians(30.0f),
+            WIDTH / (float) HEIGHT,
+            0.1f,
+            256.f
+    );
+
     UniformBufferObject ubo = {
             .model = rotation,
-            .view = glm::lookAt(
-                    eye, // eye
-                    center, // center
-                    glm::vec3(0.0f, 0.0f, 1.0f) // up
-            ),
-            .proj = glm::perspective(
-                    glm::radians(45.0f), WIDTH / (float) HEIGHT, zNear, zFar),
+            .view = view,
+            .proj = perspective,
     };
     ubo.proj[1][1] *= -1;
 

@@ -31,7 +31,6 @@ public:
     static const size_t er_imagedata_size;
 
     void update_internal_data();
-    void update_uniform_buffers();
 
 private:
     /* Shared vulkan objects among all engines running */
@@ -82,7 +81,10 @@ private:
     void setup_debugger();
     void create_device();
     void create_command_pool();
-    void fetch_data();
+
+    void fill_data();
+    void bind_data();
+    void update_uniform_buffers();
 
     void create_pipeline();
     void create_descriptor_set();

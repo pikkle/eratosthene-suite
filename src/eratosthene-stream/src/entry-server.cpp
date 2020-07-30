@@ -57,7 +57,6 @@ int main(int argc, char **argv) {
 /* ----------- Broadcasting methods ----------- */
 
 void EntryServer::setup_server(int server_port, unsigned char * data_server_ip, int data_server_port) {
-    // @TODO: enable websocket deflate per message
     ix::WebSocketServer er_server_ws(server_port, STREAM_ADDRESS);
     std::cout << "Listening on " << server_port << std::endl;
 
@@ -65,8 +64,6 @@ void EntryServer::setup_server(int server_port, unsigned char * data_server_ip, 
     er_server_ws.setOnConnectionCallback(
             [&er_server_ws, data_server_ip, data_server_port](std::shared_ptr<ix::WebSocket> webSocket,
                       std::shared_ptr<ix::ConnectionState> connectionState) {
-                // @TODO @FUTURE limit the number of concurrent connections depending on GPU hardware
-
                 // create a private client for this new connection
                 auto client = std::make_shared<VideoClient>(data_server_ip, data_server_port);
 
