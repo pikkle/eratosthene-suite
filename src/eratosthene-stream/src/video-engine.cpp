@@ -101,7 +101,7 @@ void VideoEngine::create_phys_device() {
         VkPhysicalDeviceFeatures supportedFeatures;
         vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
         // @TODO @FUTURE: check extensions support (e.g. VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME)
-        if (supportedFeatures.samplerAnisotropy) {
+        if (supportedFeatures.samplerAnisotropy && supportedFeatures.vertexPipelineStoresAndAtomics) {
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(device, &deviceProperties);
             printf("GPU selected: %s\n", deviceProperties.deviceName);
@@ -159,10 +159,16 @@ void VideoEngine::create_device() {
         }
     }
     std::vector<VkDeviceQueueCreateInfo> queuesCreateInfos = {graphicsQueueInfo, transferQueueInfo};
+
+    VkPhysicalDeviceFeatures features {
+        .vertexPipelineStoresAndAtomics = true,
+    };
+
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 2,
         .pQueueCreateInfos = queuesCreateInfos.data(),
+        .pEnabledFeatures = &features,
     };
 
     TEST_VK_ASSERT(vkCreateDevice(vk_phys_device, &deviceCreateInfo, nullptr, &vk_device),
@@ -201,11 +207,44 @@ void VideoEngine::fill_data() {
     dt_lines.clear();
     dt_triangles.clear();
 
+    /* angle variable */
+    float er_lon = er_view_get_lon(&*cl_view);
+    float er_lat = er_view_get_lat(&*cl_view);
+
+    /* trigonometric variable */
+    le_real_t er_cosl = cos(-er_lon * LE_D2R);
+    le_real_t er_sinl = sin(-er_lon * LE_D2R);
+    le_real_t er_cosa = cos(+er_lat * LE_D2R);
+    le_real_t er_sina = sin(+er_lat * LE_D2R);
+
     uint32_t point_id = 0;
     uint16_t cell_id = 0;
-    for ( le_size_t er_parse = 0; er_parse < cl_model->md_size; ++er_parse ) {
+    for (le_size_t er_parse = 0; er_parse < cl_model->md_size; ++er_parse) {
         auto cell = cl_model->md_cell + er_parse;
-        auto base = le_array_get_byte(& cell->ce_data );
+        auto base = le_array_get_byte(&cell->ce_data);
+
+        // transformation matrix computation (compute only once)
+        if (dt_transformations.empty()) {
+            le_real_t er_trans[3] = {
+                    cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
+                    cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
+            };
+            /* compute cell translation */
+            er_trans[2] = cell->ce_edge[1] * er_sina - er_trans[1] * er_cosa;
+            er_trans[1] = cell->ce_edge[1] * er_cosa + er_trans[1] * er_sina;
+
+            /* cell translation */
+            auto transformation = glm::translate(
+                    glm::mat4(1),
+                    glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
+            );
+
+            /* cell rotation - planimetric rotation */
+            transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
+            transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
+            dt_transformations.push_back(transformation);
+
+        }
 
         /* iterate over data in the cell */
         for (le_size_t i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
@@ -230,11 +269,7 @@ void VideoEngine::fill_data() {
             base += LE_ARRAY_DATA;
         }
 
-        // only non empty cells should be kept in the subsequent pipeline
-        if (le_array_get_size(&cell->ce_data) > 0) {
-            cell_id++;
-        }
-
+        cell_id++;
     }
 }
 
@@ -401,7 +436,7 @@ void VideoEngine::create_render_pass() {
 void VideoEngine::create_pipeline() {
     VkDescriptorSetLayoutBinding uboLayoutBinding = {
         .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .pImmutableSamplers = nullptr,
@@ -612,7 +647,7 @@ void VideoEngine::create_command_buffers() {
 
 void VideoEngine::create_descriptor_set() {
     VkDescriptorPoolSize poolSize = {
-        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .descriptorCount = 1,
     };
     VkDescriptorPoolCreateInfo poolInfo = {
@@ -633,7 +668,7 @@ void VideoEngine::create_descriptor_set() {
 
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
-    create_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+    create_buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                   &vk_uniform_buffer, bufferSize);
 
@@ -649,7 +684,7 @@ void VideoEngine::create_descriptor_set() {
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .pBufferInfo = &bufferInfo,
     };
 
@@ -688,13 +723,15 @@ void VideoEngine::update_uniform_buffers() {
             0.1f,
             256.f
     );
+    perspective[1][1] *= -1;
 
     UniformBufferObject ubo = {
-            .model = rotation,
             .view = view,
             .proj = perspective,
+            .count = 1,
+            .model = {},
     };
-    ubo.proj[1][1] *= -1;
+    ubo.model[0] = rotation;
 
     void *data;
     vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data);

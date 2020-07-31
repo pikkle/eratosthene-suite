@@ -23,7 +23,7 @@ struct Vertex {
     glm::vec3 color;
 
     /*! Used to identify the cell in which the vertex belongs to, in order to apply the appropriate transformation matrix */
-    uint16_t cell_id;
+    uint32_t cell_id;
 
     /*!
      * A vertex binding describes at which rate to load data from memory throughout the vertices.
@@ -44,8 +44,8 @@ struct Vertex {
      * vertex data originating from a binding description. We have two attributes, position and color,
      * so we need two attribute description structs.
      */
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = {};
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -57,6 +57,11 @@ struct Vertex {
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
 
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].format = VK_FORMAT_R32_UINT;
+        attributeDescriptions[2].offset = offsetof(Vertex, cell_id);
+
         return attributeDescriptions;
     };
 };
@@ -65,9 +70,10 @@ struct Vertex {
  * Transformation matrices to pass to the vertex shader
  */
 struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    uint32_t count;
+    glm::mat4 model[];
 };
 
 /*!

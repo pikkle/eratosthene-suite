@@ -16,6 +16,7 @@ using namespace StreamUtils;
 
 typedef std::vector<Vertex> Vertices;
 typedef std::vector<uint32_t> Indices;
+typedef std::vector<glm::mat4> Transformations;
 
 // @TODO: change size depending on the client's resolution (with some max resolution TBD)
 const int WIDTH = 1600;
@@ -44,6 +45,7 @@ private:
     std::shared_ptr<er_model_t> cl_model;
     std::shared_ptr<er_view_t> cl_view;
 
+    Transformations dt_transformations = {};
     Vertices dt_vertices = {};
     Indices dt_triangles = {};
     Indices dt_lines = {};
