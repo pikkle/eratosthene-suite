@@ -72,8 +72,8 @@ struct Vertex {
 struct UniformBufferObject {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
-    uint32_t count;
-    glm::mat4 model[];
+    uint32_t modelCount;
+    glm::mat4 *model;
 };
 
 /*!

@@ -73,7 +73,7 @@ private:
     VkPipeline vk_pipeline_points;
     VkPipelineLayout vk_pipeline_layout;
     VkPipelineCache vk_pipeline_cache;
-    VkCommandBuffer vk_command_buffer;
+    VkCommandBuffer vk_draw_command_buffer;
     BufferWrap vk_vertices_buffer;
     BufferWrap vk_triangles_buffer;
     BufferWrap vk_lines_buffer;

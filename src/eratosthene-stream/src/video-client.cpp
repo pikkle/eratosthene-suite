@@ -69,7 +69,7 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
                               // @TODO: use a dedicated streaming server with performant codecs to send the frames
                               std::vector<uint8_t> encodedData;
                               stbi_write_jpg_to_func(encode_callback, reinterpret_cast<void *>(&encodedData), WIDTH, HEIGHT,
-                                                     4, outputImage, 30);
+                                                     4, outputImage, 100);
                               auto b64 = base64_encode(encodedData.data(), encodedData.size());
                               auto result = b64.data();
 

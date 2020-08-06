@@ -218,13 +218,12 @@ void VideoEngine::fill_data() {
     le_real_t er_sina = sin(+er_lat * LE_D2R);
 
     uint32_t point_id = 0;
-    uint16_t cell_id = 0;
-    for (le_size_t er_parse = 0; er_parse < cl_model->md_size; ++er_parse) {
-        auto cell = cl_model->md_cell + er_parse;
+    for (uint32_t cell_id = 0; cell_id < cl_model->md_size; ++cell_id) {
+        auto cell = cl_model->md_cell + cell_id;
         auto base = le_array_get_byte(&cell->ce_data);
 
         // transformation matrix computation (compute only once)
-        if (dt_transformations.empty()) {
+        if (dt_transformations.size() < cl_model->md_size) {
             le_real_t er_trans[3] = {
                     cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
                     cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
@@ -239,11 +238,12 @@ void VideoEngine::fill_data() {
                     glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
             );
 
+//            std::cout << "t {" << er_trans[0] << ", " << er_trans[1] << ", " << er_trans[2] - LE_ADDRESS_WGS_A << "}" << std::endl;
+
             /* cell rotation - planimetric rotation */
             transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
             transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
             dt_transformations.push_back(transformation);
-
         }
 
         /* iterate over data in the cell */
@@ -254,22 +254,20 @@ void VideoEngine::fill_data() {
             // points to the color values
             le_byte_t *c_data = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
 
-            auto scale = 1.f / 100000.f; // @TODO: remove this debugging value as the points should be correctly placed using a transformation matrix in the shader pipeline
-
             // gather vertex data
             dt_vertices.push_back(Vertex{
-                    .pos =     {p_data[0] * scale, p_data[1] * scale, p_data[2] * scale},
+                    .pos =     {p_data[0], p_data[1], p_data[2]},
                     .color =   {(float) c_data[0] / 255.f, (float) c_data[1] / 255.f, (float) c_data[2] / 255.f},
                     .cell_id = cell_id,
             });
             dt_points.push_back(point_id++);
 
+//            std::cout << "p" << point_id << " : {" << p_data[0] << ", "<< p_data[1] << ", "<< p_data[2] << "}" << std::endl;
+
             // @TODO: parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
 
             base += LE_ARRAY_DATA;
         }
-
-        cell_id++;
     }
 }
 
@@ -587,10 +585,10 @@ void VideoEngine::create_command_buffers() {
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1,
     };
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_command_buffer), "failed to allocate command buffers!");
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_draw_command_buffer), "failed to allocate command buffers!");
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    TEST_VK_ASSERT(vkBeginCommandBuffer(vk_command_buffer, &beginInfo), "failed to begin recording command buffer!");
+    TEST_VK_ASSERT(vkBeginCommandBuffer(vk_draw_command_buffer, &beginInfo), "failed to begin recording command buffer!");
 
     std::array<VkClearValue, 2> clearValues = {};
     clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -608,7 +606,7 @@ void VideoEngine::create_command_buffers() {
 
     VkBuffer vertexBuffers[] = {vk_vertices_buffer.buf};
     VkDeviceSize offsets[] = {0};
-    vkCmdBeginRenderPass(vk_command_buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(vk_draw_command_buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport = {
         .width = (float) WIDTH,
@@ -616,33 +614,33 @@ void VideoEngine::create_command_buffers() {
         .minDepth = (float)0.0f,
         .maxDepth = (float)1.0f,
     };
-    vkCmdSetViewport(vk_command_buffer, 0, 1, &viewport);
+    vkCmdSetViewport(vk_draw_command_buffer, 0, 1, &viewport);
     VkRect2D scissor = {.extent = {WIDTH, HEIGHT},};
 
     if (!dt_vertices.empty()) {
-        vkCmdSetScissor(vk_command_buffer, 0, 1, &scissor);
-        vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_layout, 0, 1, &vk_descriptor_set, 0, nullptr);
-        vkCmdBindVertexBuffers(vk_command_buffer, 0, 1, vertexBuffers, offsets);
+        vkCmdSetScissor(vk_draw_command_buffer, 0, 1, &scissor);
+        vkCmdBindDescriptorSets(vk_draw_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_layout, 0, 1, &vk_descriptor_set, 0, nullptr);
+        vkCmdBindVertexBuffers(vk_draw_command_buffer, 0, 1, vertexBuffers, offsets);
     }
     if (!dt_triangles.empty()) {
-        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_triangles);
-        vkCmdBindIndexBuffer(vk_command_buffer, vk_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(vk_command_buffer, dt_triangles.size(), 1, 0, 0, 0);
+        vkCmdBindPipeline(vk_draw_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_triangles);
+        vkCmdBindIndexBuffer(vk_draw_command_buffer, vk_triangles_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(vk_draw_command_buffer, dt_triangles.size(), 1, 0, 0, 0);
     }
     if (!dt_lines.empty()) {
-        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_lines);
-        vkCmdBindIndexBuffer(vk_command_buffer, vk_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(vk_command_buffer, dt_lines.size(), 1, 0, 0, 0);
+        vkCmdBindPipeline(vk_draw_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_lines);
+        vkCmdBindIndexBuffer(vk_draw_command_buffer, vk_lines_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(vk_draw_command_buffer, dt_lines.size(), 1, 0, 0, 0);
     }
     if (!dt_points.empty()) {
-        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_points);
-        vkCmdBindIndexBuffer(vk_command_buffer, vk_points_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(vk_command_buffer, dt_points.size(), 1, 0, 0, 0);
+        vkCmdBindPipeline(vk_draw_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline_points);
+        vkCmdBindIndexBuffer(vk_draw_command_buffer, vk_points_buffer.buf, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(vk_draw_command_buffer, dt_points.size(), 1, 0, 0, 0);
     }
 
-    vkCmdEndRenderPass(vk_command_buffer);
+    vkCmdEndRenderPass(vk_draw_command_buffer);
 
-    TEST_VK_ASSERT(vkEndCommandBuffer(vk_command_buffer), "failed to record command buffer!");
+    TEST_VK_ASSERT(vkEndCommandBuffer(vk_draw_command_buffer), "failed to record command buffer!");
 }
 
 void VideoEngine::create_descriptor_set() {
@@ -707,31 +705,25 @@ void VideoEngine::update_uniform_buffers() {
     float zNear = er_geodesy_near(altitude, scale);
     float zFar = er_geodesy_far(altitude, gamma, scale);
 
-    auto rotation = glm::rotate(
-            glm::mat4(1.0f),
-            glm::radians(0.f),
-            glm::vec3(1.0f, 0.0f, 0.0f)
-    );
     auto view = glm::lookAt(
             eye, // eye
             center, // center
             glm::vec3(0.0f, 0.0f, 1.0f) // up
     );
     auto perspective = glm::perspective(
-            glm::radians(30.0f),
+            glm::radians(45.0f),
             WIDTH / (float) HEIGHT,
-            0.1f,
-            256.f
+            zNear,
+            zFar
     );
     perspective[1][1] *= -1;
 
     UniformBufferObject ubo = {
             .view = view,
             .proj = perspective,
-            .count = 1,
-            .model = {},
+            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
+            .model = dt_transformations.data(),
     };
-    ubo.model[0] = rotation;
 
     void *data;
     vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data);
@@ -741,7 +733,7 @@ void VideoEngine::update_uniform_buffers() {
 
 void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
     update_uniform_buffers();
-    submit_work(vk_command_buffer, vk_graphics_queue);
+    submit_work(vk_draw_command_buffer, vk_graphics_queue);
     vkDeviceWaitIdle(vk_device);
     output_result(imagedata, subresourceLayout);
 }
