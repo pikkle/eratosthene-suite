@@ -132,28 +132,22 @@ void VideoEngine::create_device() {
 
     const float defaultQueuePriority(0.0f);
     VkDeviceQueueCreateInfo graphicsQueueInfo, transferQueueInfo;
+    graphicsQueueInfo = transferQueueInfo = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .pQueuePriorities = &defaultQueuePriority,
+    };
     bool has_gq = false, has_tq = false;
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilyProperties.size()); i++) {
-        if (queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT && !has_gq) {
-            vk_graphics_queue_family_index = i;
-            graphicsQueueInfo = {
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = i,
-                .queueCount = 1,
-                .pQueuePriorities = &defaultQueuePriority,
-            };
+        if (queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT && !(has_gq)) {
+            graphicsQueueInfo.queueFamilyIndex = vk_graphics_queue_family_index = i;
+            graphicsQueueInfo.queueCount = 1,
             has_gq = true;
             continue;
         }
-        if (queueFamilyProperties[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !has_tq) {
-            vk_transfer_queue_family_index = i;
-            transferQueueInfo = {
-                    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                    .queueFamilyIndex = i,
-                    .queueCount = 1,
-                    .pQueuePriorities = &defaultQueuePriority,
-            };
+        if (queueFamilyProperties[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !(has_tq)) {
+            transferQueueInfo.queueFamilyIndex = vk_transfer_queue_family_index = i;
+            transferQueueInfo.queueCount = 2; // we need two queues of transfer, one for data binding to the gpu and one to retrieve rendered image data
             has_tq = true;
             continue;
         }
@@ -166,7 +160,7 @@ void VideoEngine::create_device() {
 
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = 2,
+        .queueCreateInfoCount = static_cast<uint32_t>(queuesCreateInfos.size()),
         .pQueueCreateInfos = queuesCreateInfos.data(),
         .pEnabledFeatures = &features,
     };
@@ -176,6 +170,7 @@ void VideoEngine::create_device() {
 
     vkGetDeviceQueue(vk_device, vk_graphics_queue_family_index, 0, &vk_graphics_queue);
     vkGetDeviceQueue(vk_device, vk_transfer_queue_family_index, 0, &vk_transfer_queue);
+    vkGetDeviceQueue(vk_device, vk_transfer_queue_family_index, 1, &vk_binding_queue);
 }
 
 void VideoEngine::create_command_pool() {
@@ -187,6 +182,7 @@ void VideoEngine::create_command_pool() {
     TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_graphics_command_pool), "error while creating graphics command pool");
     cmdPoolInfo.queueFamilyIndex = vk_transfer_queue_family_index;
     TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_transfer_command_pool), "error while creating transfer command pool");
+    TEST_VK_ASSERT(vkCreateCommandPool(vk_device, &cmdPoolInfo, nullptr, &vk_binding_command_pool), "error while creating binding command pool");
 }
 
 void VideoEngine::update_internal_data() {
@@ -334,7 +330,9 @@ void VideoEngine::create_attachments() {
             vk_color_attachment,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
             vk_color_format,
-            VK_IMAGE_ASPECT_COLOR_BIT
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            VK_IMAGE_TILING_OPTIMAL
     );
 
     // Depth attachment
@@ -347,8 +345,21 @@ void VideoEngine::create_attachments() {
             vk_depth_attachment,
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
             vk_depth_format,
-            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
+            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            VK_IMAGE_TILING_OPTIMAL
     );
+
+    // Copy image attachment
+    create_attachment(
+            vk_copy_attachment,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            vk_color_format,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            VK_IMAGE_TILING_LINEAR,
+            false
+        );
 
 }
 
@@ -585,7 +596,10 @@ void VideoEngine::create_command_buffers() {
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1,
     };
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_draw_command_buffer), "failed to allocate command buffers!");
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_draw_command_buffer), "failed to allocate drawing command buffers!");
+    allocInfo.commandPool = vk_transfer_command_pool;
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_copy_command_buffer), "failed to allocate transfer command buffers!");
+
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     TEST_VK_ASSERT(vkBeginCommandBuffer(vk_draw_command_buffer, &beginInfo), "failed to begin recording command buffer!");
@@ -695,7 +709,7 @@ void VideoEngine::create_descriptor_set() {
 /* --------- Vulkan rendering methods --------- */
 
 void VideoEngine::update_uniform_buffers() {
-    auto eye = glm::vec3(0.f, 1.f, 1.f);
+    auto eye = glm::vec3(1.f, 1.f, 1.f);
     auto center = glm::vec3(0.0f, 0.0f, 0.f);
 
     auto altitude = er_view_get_alt(&*cl_view);
@@ -718,11 +732,14 @@ void VideoEngine::update_uniform_buffers() {
     );
     perspective[1][1] *= -1;
 
+    auto rotation = glm::rotate(glm::mat4(1.f), glm::radians(30.f),  glm::vec3(1.0f, 0.0f, 0.0f));
     UniformBufferObject ubo = {
             .view = view,
             .proj = perspective,
-            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
-            .model = dt_transformations.data(),
+            1,
+            &rotation
+//            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
+//            .model = dt_transformations.data(),
     };
 
     void *data;
@@ -739,104 +756,57 @@ void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLay
 }
 
 void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
-    VkImage copyImage;
-    VkMemoryRequirements memRequirements;
-    VkDeviceMemory dstImageMemory;
-    VkCommandBuffer copyCmd;
-
-    VkImageCreateInfo imageCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = vk_color_format,
-        .extent = {
-                .width = WIDTH,
-                .height = HEIGHT,
-                .depth = 1,
-        },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_LINEAR,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    TEST_VK_ASSERT(vkCreateImage(vk_device, &imageCreateInfo, nullptr, &copyImage), "error while creating copy image");
-
-    vkGetImageMemoryRequirements(vk_device, copyImage, &memRequirements);
-    VkMemoryAllocateInfo memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = get_memtype_index(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-    };
-
-    TEST_VK_ASSERT(vkAllocateMemory(vk_device, &memAllocInfo, nullptr, &dstImageMemory), "error while allocating memory for copy image");
-    TEST_VK_ASSERT(vkBindImageMemory(vk_device, copyImage, dstImageMemory, 0), "error while binding memory to copy image");
-
-    VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = vk_transfer_command_pool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1,
-    };
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffer for image copy");
     VkCommandBufferBeginInfo cmdBufInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    TEST_VK_ASSERT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while beginning command buffer for image copy");
-
-    VkImageMemoryBarrier imageMemoryBarrier = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = 0,
-        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = copyImage,
-        .subresourceRange = VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
-    };
-    vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
-                         nullptr, 1, &imageMemoryBarrier);
-
     VkImageCopy imageCopyRegion = {
-        .srcSubresource = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .layerCount = 1,
-        },
-        .dstSubresource = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .layerCount = 1,
-        },
-        .extent = {
-            .width = WIDTH,
-            .height = HEIGHT,
-            .depth = 1,
-        }
+            .srcSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .layerCount = 1,
+            },
+            .dstSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .layerCount = 1,
+            },
+            .extent = {
+                    .width = WIDTH,
+                    .height = HEIGHT,
+                    .depth = 1,
+            }
     };
-
-    vkCmdCopyImage(copyCmd, vk_color_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                   copyImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageCopyRegion);
-
+    VkImageMemoryBarrier imageMemoryBarrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = vk_copy_attachment.img,
+            .subresourceRange = VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
+    };
+    TEST_VK_ASSERT(vkResetCommandBuffer(vk_copy_command_buffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT), "error while resetting command buffer for image copy");
+    TEST_VK_ASSERT(vkBeginCommandBuffer(vk_copy_command_buffer, &cmdBufInfo), "error while beginning command buffer for image copy");
+    vkCmdPipelineBarrier(vk_copy_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &imageMemoryBarrier);
+    vkCmdCopyImage(vk_copy_command_buffer, vk_color_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   vk_copy_attachment.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageCopyRegion);
     imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     imageMemoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+    vkCmdPipelineBarrier(vk_copy_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                          nullptr, 1, &imageMemoryBarrier);
 
-    TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while ending command buffers for image copy");
-    submit_work(copyCmd, vk_transfer_queue);
+    TEST_VK_ASSERT(vkEndCommandBuffer(vk_copy_command_buffer), "error while ending command buffers for image copy");
+    submit_work(vk_copy_command_buffer, vk_transfer_queue);
 
     VkImageSubresource subResource{VK_IMAGE_ASPECT_COLOR_BIT};
 
-    vkGetImageSubresourceLayout(vk_device, copyImage, &subResource, &subresourceLayout);
+    vkGetImageSubresourceLayout(vk_device, vk_copy_attachment.img, &subResource, &subresourceLayout);
 
     char *tmpdata;
-    vkMapMemory(vk_device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
+    vkMapMemory(vk_device, vk_copy_attachment.mem, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
     memcpy(imagedata, tmpdata, er_imagedata_size);
-
-    vkUnmapMemory(vk_device, dstImageMemory);
-    vkFreeMemory(vk_device, dstImageMemory, nullptr);
-    vkDestroyImage(vk_device, copyImage, nullptr);
-
+    vkUnmapMemory(vk_device, vk_copy_attachment.mem);
 }
 
 /* ----- End of vulkan rendering methods ------ */
@@ -904,7 +874,7 @@ inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPr
 inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
     VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = vk_graphics_command_pool,
+            .commandPool = vk_binding_command_pool,
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
     };
@@ -920,7 +890,7 @@ inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingW
     };
     vkCmdCopyBuffer(copyCmd, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
     TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
-    submit_work(copyCmd, vk_graphics_queue);
+    submit_work(copyCmd, vk_binding_queue);
 
     vkDestroyBuffer(vk_device, stagingWrap.buf, nullptr);
     vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
@@ -937,7 +907,7 @@ inline VkFormat VideoEngine::find_supported_format(const std::vector<VkFormat> &
     throw std::runtime_error("failed to find supported format!");
 }
 
-inline void VideoEngine::create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect) {
+inline void VideoEngine::create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect, VkMemoryPropertyFlags memoryProperties, VkImageTiling tiling, bool createView) {
     VkImageCreateInfo imageInfo = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
@@ -949,7 +919,7 @@ inline void VideoEngine::create_attachment(Attachment &att, VkImageUsageFlags im
             .mipLevels = 1,
             .arrayLayers = 1,
             .samples = VK_SAMPLE_COUNT_1_BIT,
-            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .tiling = tiling,
             .usage = imgUsage,
     };
     VkMemoryRequirements memReqs;
@@ -958,24 +928,26 @@ inline void VideoEngine::create_attachment(Attachment &att, VkImageUsageFlags im
     VkMemoryAllocateInfo memAlloc = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             .allocationSize = memReqs.size,
-            .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+            .memoryTypeIndex = get_memtype_index(memReqs.memoryTypeBits, memoryProperties),
     };
     TEST_VK_ASSERT(vkAllocateMemory(vk_device, &memAlloc, nullptr, &att.mem), "error while allocating attachment image memory");
     TEST_VK_ASSERT(vkBindImageMemory(vk_device, att.img, att.mem, 0), "error while binding attachment image to memory");
 
-    VkImageViewCreateInfo viewInfo = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = att.img,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = format,
-            .subresourceRange = {
-                    .aspectMask = aspect,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,},
-    };
-    TEST_VK_ASSERT(vkCreateImageView(vk_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
+    if (createView) {
+        VkImageViewCreateInfo viewInfo = {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = att.img,
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = format,
+                .subresourceRange = {
+                        .aspectMask = aspect,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,},
+        };
+        TEST_VK_ASSERT(vkCreateImageView(vk_device, &viewInfo, nullptr, &att.view), "error while creating attachment view");
+    }
 }
 
 inline VkShaderModule VideoEngine::create_shader_module(const std::vector<char> &code) {

@@ -57,12 +57,15 @@ private:
     uint32 vk_transfer_queue_family_index;
     VkQueue vk_graphics_queue;
     VkQueue vk_transfer_queue;
+    VkQueue vk_binding_queue;
     VkCommandPool vk_graphics_command_pool;
     VkCommandPool vk_transfer_command_pool;
+    VkCommandPool vk_binding_command_pool;
     VkFormat vk_color_format = VK_FORMAT_R8G8B8A8_UNORM;
     VkFormat vk_depth_format;
     Attachment vk_color_attachment;
     Attachment vk_depth_attachment;
+    Attachment vk_copy_attachment;
     VkRenderPass vk_render_pass;
     VkFramebuffer vk_framebuffer;
     VkDescriptorSetLayout vk_descriptor_set_layout;
@@ -74,6 +77,7 @@ private:
     VkPipelineLayout vk_pipeline_layout;
     VkPipelineCache vk_pipeline_cache;
     VkCommandBuffer vk_draw_command_buffer;
+    VkCommandBuffer vk_copy_command_buffer;
     BufferWrap vk_vertices_buffer;
     BufferWrap vk_triangles_buffer;
     BufferWrap vk_lines_buffer;
@@ -98,7 +102,7 @@ private:
 
     /* Helper methods */
     VkShaderModule create_shader_module(const std::vector<char> &code);
-    void create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect);
+    void create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect, VkMemoryPropertyFlags memoryProperties, VkImageTiling tiling, bool createView = true);
     VkFormat find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features);
     void bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap);
     void create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data = nullptr);
