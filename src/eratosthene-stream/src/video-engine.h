@@ -61,6 +61,9 @@ private:
     VkCommandPool vk_graphics_command_pool;
     VkCommandPool vk_transfer_command_pool;
     VkCommandPool vk_binding_command_pool;
+    VkCommandBuffer vk_draw_command_buffer;
+    VkCommandBuffer vk_copy_command_buffer;
+    VkCommandBuffer vk_binding_command_buffer;
     VkFormat vk_color_format = VK_FORMAT_R8G8B8A8_UNORM;
     VkFormat vk_depth_format;
     Attachment vk_color_attachment;
@@ -76,8 +79,7 @@ private:
     VkPipeline vk_pipeline_points;
     VkPipelineLayout vk_pipeline_layout;
     VkPipelineCache vk_pipeline_cache;
-    VkCommandBuffer vk_draw_command_buffer;
-    VkCommandBuffer vk_copy_command_buffer;
+
     BufferWrap vk_vertices_buffer;
     BufferWrap vk_triangles_buffer;
     BufferWrap vk_lines_buffer;

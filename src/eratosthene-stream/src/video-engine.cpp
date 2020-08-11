@@ -10,6 +10,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
+
 #include "video-engine.h"
 
 
@@ -53,6 +56,11 @@ VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_v
 VideoEngine::~VideoEngine() {
     // @TODO: free up all vulkan objects
     std::cerr << "Freeing up a engine instance..." << std::endl;
+    vkFreeCommandBuffers(vk_device, vk_graphics_command_pool, 1, &vk_draw_command_buffer);
+    vkFreeCommandBuffers(vk_device, vk_transfer_command_pool, 1, &vk_copy_command_buffer);
+    vkDestroyCommandPool(vk_device, vk_graphics_command_pool, nullptr);
+    vkDestroyCommandPool(vk_device, vk_transfer_command_pool, nullptr);
+    vkDestroyCommandPool(vk_device, vk_binding_command_pool, nullptr);
 }
 
 
@@ -213,7 +221,14 @@ void VideoEngine::fill_data() {
     le_real_t er_cosa = cos(+er_lat * LE_D2R);
     le_real_t er_sina = sin(+er_lat * LE_D2R);
 
+    dt_vertices.push_back(Vertex{
+        .pos = {0, 10, 0},
+        .color = {0, 1, 0},
+        .cell_id = 0,
+    });
     uint32_t point_id = 0;
+    dt_points.push_back(point_id++);
+
     for (uint32_t cell_id = 0; cell_id < cl_model->md_size; ++cell_id) {
         auto cell = cl_model->md_cell + cell_id;
         auto base = le_array_get_byte(&cell->ce_data);
@@ -231,19 +246,21 @@ void VideoEngine::fill_data() {
             /* cell translation */
             auto transformation = glm::translate(
                     glm::mat4(1),
-                    glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
+                    glm::vec3(er_trans[0], er_trans[1], er_trans[2])
             );
-
-//            std::cout << "t {" << er_trans[0] << ", " << er_trans[1] << ", " << er_trans[2] - LE_ADDRESS_WGS_A << "}" << std::endl;
 
             /* cell rotation - planimetric rotation */
             transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
             transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
             dt_transformations.push_back(transformation);
+
+//            std::cout << "Transformation [" << cell_id << "] :" << glm::to_string(transformation) << std::endl;
+
         }
 
         /* iterate over data in the cell */
         for (le_size_t i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
+//            std::cout << "Cell[" << cell_id << "] size = " << le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA << std::endl;
             // main pointer on the vertex, and points directly to the vertex coordinates
             le_real_t *p_data = reinterpret_cast<le_real_t *>(base);
 
@@ -258,8 +275,10 @@ void VideoEngine::fill_data() {
             });
             dt_points.push_back(point_id++);
 
-//            std::cout << "p" << point_id << " : {" << p_data[0] << ", "<< p_data[1] << ", "<< p_data[2] << "}" << std::endl;
-
+            glm::vec4 v = glm::vec4(p_data[0], p_data[1], p_data[2], 1.0);
+//            std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(v) << std::endl;
+            auto trp = dt_transformations[0] * v;
+//            std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(trp) << std::endl;
             // @TODO: parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
 
             base += LE_ARRAY_DATA;
@@ -599,13 +618,14 @@ void VideoEngine::create_command_buffers() {
     TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_draw_command_buffer), "failed to allocate drawing command buffers!");
     allocInfo.commandPool = vk_transfer_command_pool;
     TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_copy_command_buffer), "failed to allocate transfer command buffers!");
-
+    allocInfo.commandPool = vk_binding_command_pool;
+    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &allocInfo, &vk_binding_command_buffer), "failed to allocate binding command buffers!");
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     TEST_VK_ASSERT(vkBeginCommandBuffer(vk_draw_command_buffer, &beginInfo), "failed to begin recording command buffer!");
 
     std::array<VkClearValue, 2> clearValues = {};
-    clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+    clearValues[0].color = { 1.0f, 1.0f, 1.0f, 1.0f };
     clearValues[1].depthStencil = { 1.0f, 0 };
     VkRenderPassBeginInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -714,32 +734,49 @@ void VideoEngine::update_uniform_buffers() {
 
     auto altitude = er_view_get_alt(&*cl_view);
     auto gamma = er_view_get_gam(&*cl_view);
-    auto scale = er_geodesy_scale(altitude);
+//    auto scale = er_geodesy_scale(altitude);
+    auto scale = 0.0001f;
+//    std::cout << "scale: " << scale << std::endl;
 
     float zNear = er_geodesy_near(altitude, scale);
     float zFar = er_geodesy_far(altitude, gamma, scale);
 
-    auto view = glm::lookAt(
-            eye, // eye
-            center, // center
-            glm::vec3(0.0f, 0.0f, 1.0f) // up
-    );
-    auto perspective = glm::perspective(
-            glm::radians(45.0f),
-            WIDTH / (float) HEIGHT,
-            zNear,
-            zFar
-    );
-    perspective[1][1] *= -1;
+//    std::cout << "planes: " << zNear << ", " << zFar << std::endl;
 
-    auto rotation = glm::rotate(glm::mat4(1.f), glm::radians(30.f),  glm::vec3(1.0f, 0.0f, 0.0f));
+//    auto view = glm::scale(
+//            glm::lookAt(
+//                    eye, // eye
+//                    center, // center
+//                    glm::vec3(0.0f, 0.0f, 1.0f) // up
+//            ),
+//            glm::vec3(0.001f)
+//    );
+    auto view = glm::scale(glm::mat4(1.0f), glm::vec3(scale, scale, scale));
+    auto projection = glm::perspective(
+            glm::radians(45.0f),
+            (float) WIDTH / (float) HEIGHT,
+            1.f,
+            255.f
+    );
+    projection[1][1] *= -1;
+
+if (! dt_vertices.empty()) {
+//    std::cout << glm::to_string(view) << std::endl;
+//    std::cout << glm::to_string(projection) << std::endl;
+//    std::cout << glm::to_string(dt_transformations[0]) << std::endl;
+//    glm::vec4 v = glm::vec4(dt_vertices[0].pos, 1.0);
+//    std::cout << glm::to_string(v) << std::endl;
+//    std::cout << glm::to_string(dt_transformations[0] * v) << std::endl;
+//    std::cout << glm::to_string(view * projection * dt_transformations[0]) << std::endl;
+//    std::cout << glm::to_string(projection * dt_transformations[0] * v) << std::endl;
+//    std::cout << glm::to_string(view * projection * dt_transformations[0] * v) << std::endl;
+
+}
     UniformBufferObject ubo = {
             .view = view,
-            .proj = perspective,
-            1,
-            &rotation
-//            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
-//            .model = dt_transformations.data(),
+            .proj = projection,
+            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
+            .model = dt_transformations.data(),
     };
 
     void *data;
@@ -872,25 +909,20 @@ inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPr
 }
 
 inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
-    VkCommandBufferAllocateInfo cmdBufAllocateInfo = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = vk_binding_command_pool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1,
-    };
-    VkCommandBuffer copyCmd;
-    TEST_VK_ASSERT(vkAllocateCommandBuffers(vk_device, &cmdBufAllocateInfo, &copyCmd), "error while allocating command buffers");
     VkCommandBufferBeginInfo cmdBufInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
-
-    TEST_VK_ASSERT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo), "error while starting command buffer");
+    TEST_VK_ASSERT(vkResetCommandBuffer(vk_binding_command_buffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT),
+                   "error while resetting binding command buffer");
+    TEST_VK_ASSERT(vkBeginCommandBuffer(vk_binding_command_buffer, &cmdBufInfo),
+                   "error while starting binding command buffer");
     VkBufferCopy copyRegion = {
             .size = dataSize,
     };
-    vkCmdCopyBuffer(copyCmd, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
-    TEST_VK_ASSERT(vkEndCommandBuffer(copyCmd), "error while terminating command buffer");
-    submit_work(copyCmd, vk_binding_queue);
+    vkCmdCopyBuffer(vk_binding_command_buffer, stagingWrap.buf, destWrap.buf, 1, &copyRegion);
+    TEST_VK_ASSERT(vkEndCommandBuffer(vk_binding_command_buffer),
+                   "error while terminating command buffer");
+    submit_work(vk_binding_command_buffer, vk_binding_queue);
 
     vkDestroyBuffer(vk_device, stagingWrap.buf, nullptr);
     vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
