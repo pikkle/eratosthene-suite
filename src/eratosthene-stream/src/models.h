@@ -98,6 +98,7 @@ struct Attachment {
 struct BufferWrap {
     VkBuffer buf;
     VkDeviceMemory mem;
+    bool is_allocated = false;
 };
 
 }

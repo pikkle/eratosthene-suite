@@ -124,6 +124,7 @@ private:
     void create_attachment(Attachment &att, VkImageUsageFlags imgUsage, VkFormat format, VkImageAspectFlags aspect, VkMemoryPropertyFlags memoryProperties, VkImageTiling tiling, bool createView = true);
     VkFormat find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features);
     void bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap);
+    void delete_buffer(BufferWrap *wrap);
     void create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data = nullptr);
     uint32_t get_memtype_index(uint32_t typeBits, VkMemoryPropertyFlags properties);
     void submit_work(VkCommandBuffer cmd, VkQueue queue);

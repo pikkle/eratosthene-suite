@@ -212,12 +212,14 @@ void VideoEngine::create_command_pool() {
 }
 
 void VideoEngine::update_internal_data() {
+    mx_draw.lock();
     fill_data();
     bind_data();
     create_render_pass();
     create_pipeline();
     create_descriptor_set();
     create_command_buffers();
+    mx_draw.unlock();
 }
 
 void VideoEngine::fill_data() {
@@ -312,6 +314,7 @@ void VideoEngine::bind_data() {
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, vertexBufferSize, (void *) dt_vertices.data());
+        delete_buffer(&vk_vertices_buffer);
         create_buffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                       &vk_vertices_buffer, vertexBufferSize);
@@ -325,6 +328,7 @@ void VideoEngine::bind_data() {
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, triangleBufferSize, (void *) dt_triangles.data());
+    delete_buffer(&vk_triangles_buffer);
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                       &vk_triangles_buffer, triangleBufferSize);
@@ -337,6 +341,7 @@ void VideoEngine::bind_data() {
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, lineBufferSize, (void *) dt_lines.data());
+        delete_buffer(&vk_lines_buffer);
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                       &vk_lines_buffer, lineBufferSize);
@@ -349,6 +354,7 @@ void VideoEngine::bind_data() {
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, pointBufferSize, (void *) dt_points.data());
+        delete_buffer(&vk_points_buffer);
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                       &vk_points_buffer, pointBufferSize);
@@ -782,7 +788,7 @@ if (! dt_vertices.empty()) {
     };
 
     void *data;
-    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, VK_WHOLE_SIZE, 0, &data), "error while mapping transformation buffer memory");
+    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, ubo.size(), 0, &data), "error while mapping transformation buffer memory");
     memcpy(data, &ubo, ubo.size());
     vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
 }
@@ -846,7 +852,7 @@ void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresource
     vkGetImageSubresourceLayout(vk_device, vk_copy_attachment.img, &subResource, &subresourceLayout);
 
     char *tmpdata;
-    vkMapMemory(vk_device, vk_copy_attachment.mem, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
+    vkMapMemory(vk_device, vk_copy_attachment.mem, 0, er_imagedata_size, 0, (void**)&tmpdata);
     memcpy(imagedata, tmpdata, er_imagedata_size);
     vkUnmapMemory(vk_device, vk_copy_attachment.mem);
     mx_copy.unlock();
@@ -886,6 +892,13 @@ inline uint32_t VideoEngine::get_memtype_index(uint32_t typeBits, VkMemoryProper
     return 0;
 }
 
+inline void VideoEngine::delete_buffer(BufferWrap *wrap) {
+    if (wrap->is_allocated)
+        vkDestroyBuffer(vk_device, wrap->buf, nullptr);
+
+    wrap->is_allocated = false;
+}
+
 inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, BufferWrap *wrap, VkDeviceSize size, void *data) {
     VkBufferCreateInfo bufferCreateInfo {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -912,6 +925,7 @@ inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPr
     }
 
     TEST_VK_ASSERT(vkBindBufferMemory(vk_device, wrap->buf, wrap->mem, 0), "error while binding buffer memory");
+    wrap->is_allocated = true;
 }
 
 inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
@@ -930,10 +944,10 @@ inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingW
     TEST_VK_ASSERT(vkEndCommandBuffer(vk_binding_command_buffer),
                    "error while terminating command buffer");
     submit_work(vk_binding_command_buffer, vk_binding_queue);
+    mx_bind.unlock();
 
     vkDestroyBuffer(vk_device, stagingWrap.buf, nullptr);
     vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
-    mx_bind.unlock();
 }
 
 inline VkFormat VideoEngine::find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {
