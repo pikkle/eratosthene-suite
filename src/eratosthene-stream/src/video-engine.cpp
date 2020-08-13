@@ -25,6 +25,7 @@ const std::vector<const char *> validation_layers = {
 
 const std::vector<const char *> extensions = {
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME
 };
 
 /* ----------- Vulkan setup methods ------------ */
@@ -119,17 +120,34 @@ void VideoEngine::create_phys_device() {
     }
     TEST_ASSERT(vk_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
 }
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+    std::cerr << pCallbackData->pMessage << std::endl;
+
+    return VK_FALSE;
+}
 
 void VideoEngine::setup_debugger() {
-    VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
-        .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
-        .pfnCallback = (PFN_vkDebugReportCallbackEXT) debug_callback,
+//    VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
+//        .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
+//        .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
+//        .pfnCallback = (PFN_vkDebugReportCallbackEXT) debug_callback,
+//    };
+//    auto vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
+//            vkGetInstanceProcAddr(vk_instance, "vkCreateDebugReportCallbackEXT"));
+//    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(vk_instance, &debugReportCreateInfo, nullptr, &vk_debug_report),
+//                   "error while creating debug reporter");
+    if (validation_layers.empty()) return;
+
+    VkDebugUtilsMessengerCreateInfoEXT createInfo = {
+            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = debugCallback,
     };
-    auto vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
-            vkGetInstanceProcAddr(vk_instance, "vkCreateDebugReportCallbackEXT"));
-    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(vk_instance, &debugReportCreateInfo, nullptr, &vk_debug_report),
-                   "error while creating debug reporter");
+
+    if (create_debug(vk_instance, &createInfo, nullptr, &vk_debug_messenger) != VK_SUCCESS) {
+        throw std::runtime_error("failed to set up debug messenger!");
+    }
 }
 
 void VideoEngine::create_device() {
@@ -786,13 +804,16 @@ if (! dt_vertices.empty()) {
 }
 
 void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
+    mx_draw.lock();
     update_uniform_buffers();
     submit_work(vk_draw_command_buffer, vk_graphics_queue);
+    mx_draw.unlock();
     vkDeviceWaitIdle(vk_device);
     output_result(imagedata, subresourceLayout);
 }
 
 void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
+    mx_copy.lock();
     VkCommandBufferBeginInfo cmdBufInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     VkImageCopy imageCopyRegion = {
             .srcSubresource = {
@@ -844,6 +865,7 @@ void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresource
     vkMapMemory(vk_device, vk_copy_attachment.mem, 0, VK_WHOLE_SIZE, 0, (void**)&tmpdata);
     memcpy(imagedata, tmpdata, er_imagedata_size);
     vkUnmapMemory(vk_device, vk_copy_attachment.mem);
+    mx_copy.unlock();
 }
 
 /* ----- End of vulkan rendering methods ------ */
@@ -909,6 +931,7 @@ inline void VideoEngine::create_buffer(VkBufferUsageFlags usageFlags, VkMemoryPr
 }
 
 inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingWrap, BufferWrap &destWrap) {
+    mx_bind.lock();
     VkCommandBufferBeginInfo cmdBufInfo = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
@@ -926,6 +949,7 @@ inline void VideoEngine::bind_memory(VkDeviceSize dataSize, BufferWrap &stagingW
 
     vkDestroyBuffer(vk_device, stagingWrap.buf, nullptr);
     vkFreeMemory(vk_device, stagingWrap.mem, nullptr);
+    mx_bind.unlock();
 }
 
 inline VkFormat VideoEngine::find_supported_format(const std::vector<VkFormat> &candidates, VkFormatFeatureFlags features) {

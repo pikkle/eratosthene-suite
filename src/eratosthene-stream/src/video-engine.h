@@ -7,6 +7,7 @@
 #include <eratosthene-client-model.h>
 #include <eratosthene-client-view.h>
 #include <memory>
+#include <mutex>
 
 #include "models.h"
 #include "utils.h"
@@ -51,32 +52,48 @@ private:
     Indices dt_lines = {};
     Indices dt_points = {};
 
-    VkDevice vk_device;
     VkDebugReportCallbackEXT vk_debug_report;
+    VkDebugUtilsMessengerEXT vk_debug_messenger;
+
+    VkDevice vk_device;
+
     uint32 vk_graphics_queue_family_index;
     uint32 vk_transfer_queue_family_index;
     VkQueue vk_graphics_queue;
     VkQueue vk_transfer_queue;
     VkQueue vk_binding_queue;
+
     VkCommandPool vk_graphics_command_pool;
     VkCommandPool vk_transfer_command_pool;
     VkCommandPool vk_binding_command_pool;
+
     VkCommandBuffer vk_draw_command_buffer;
     VkCommandBuffer vk_copy_command_buffer;
     VkCommandBuffer vk_binding_command_buffer;
+
+    std::mutex mx_draw;
+    std::mutex mx_copy;
+    std::mutex mx_bind;
+
     VkFormat vk_color_format = VK_FORMAT_R8G8B8A8_UNORM;
     VkFormat vk_depth_format;
+
     Attachment vk_color_attachment;
     Attachment vk_depth_attachment;
     Attachment vk_copy_attachment;
+
     VkRenderPass vk_render_pass;
+
     VkFramebuffer vk_framebuffer;
+
     VkDescriptorSetLayout vk_descriptor_set_layout;
     VkDescriptorPool vk_descriptor_pool;
     VkDescriptorSet vk_descriptor_set;
+
     VkPipeline vk_pipeline_triangles;
     VkPipeline vk_pipeline_lines;
     VkPipeline vk_pipeline_points;
+
     VkPipelineLayout vk_pipeline_layout;
     VkPipelineCache vk_pipeline_cache;
 
