@@ -239,14 +239,14 @@ void VideoEngine::fill_data() {
     le_real_t er_cosa = cos(+er_lat * LE_D2R);
     le_real_t er_sina = sin(+er_lat * LE_D2R);
 
-    dt_vertices.push_back(Vertex{
-        .pos = {0, 10, 0},
-        .color = {0, 1, 0},
-        .cell_id = 0,
-    });
-    uint32_t point_id = 0;
-    dt_points.push_back(point_id++);
+    /* motion management - tilt rotation */
+    auto base_transformation = glm::rotate(glm::mat4(1), (float) - cl_view->vw_gam, glm::vec3(1.f, 0.f, 0.f));
+    /* motion management - altimetric translation */
+    base_transformation = glm::translate(base_transformation, glm::vec3(0.f, 0.f, - cl_view->vw_alt + LE_ADDRESS_WGS_A));
+    /* motion management - azimuth rotation */
+    base_transformation = glm::rotate(base_transformation, (float) + cl_view->vw_azm, glm::vec3(0.f, 0.f, 1.f));
 
+    uint32_t point_id = 0;
     for (uint32_t cell_id = 0; cell_id < cl_model->md_size; ++cell_id) {
         auto cell = cl_model->md_cell + cell_id;
         auto base = le_array_get_byte(&cell->ce_data);
@@ -257,28 +257,25 @@ void VideoEngine::fill_data() {
                     cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
                     cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
             };
-            /* compute cell translation */
+            // compute cell translation
             er_trans[2] = cell->ce_edge[1] * er_sina - er_trans[1] * er_cosa;
             er_trans[1] = cell->ce_edge[1] * er_cosa + er_trans[1] * er_sina;
 
-            /* cell translation */
+            // cell translation
             auto transformation = glm::translate(
-                    glm::mat4(1),
-                    glm::vec3(er_trans[0], er_trans[1], er_trans[2])
+                    base_transformation,
+                    glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
             );
 
-            /* cell rotation - planimetric rotation */
+            // cell rotation - planimetric rotation
             transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
             transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
             dt_transformations.push_back(transformation);
 
-//            std::cout << "Transformation [" << cell_id << "] :" << glm::to_string(transformation) << std::endl;
-
         }
 
-        /* iterate over data in the cell */
+        // iterate over data in the cell
         for (le_size_t i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
-//            std::cout << "Cell[" << cell_id << "] size = " << le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA << std::endl;
             // main pointer on the vertex, and points directly to the vertex coordinates
             le_real_t *p_data = reinterpret_cast<le_real_t *>(base);
 
@@ -286,17 +283,15 @@ void VideoEngine::fill_data() {
             le_byte_t *c_data = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
 
             // gather vertex data
-            dt_vertices.push_back(Vertex{
-                    .pos =     {p_data[0], p_data[1], p_data[2]},
-                    .color =   {(float) c_data[0] / 255.f, (float) c_data[1] / 255.f, (float) c_data[2] / 255.f},
-                    .cell_id = cell_id,
-            });
+            auto pos = glm::vec3(p_data[0], p_data[1], p_data[2]);
+            auto color = glm::vec3(c_data[0], c_data[1], c_data[2]) / 255.f; // color representation from 8bit integer to [0,1] float
+            dt_vertices.push_back(Vertex{pos, color, cell_id});
             dt_points.push_back(point_id++);
 
-            glm::vec4 v = glm::vec4(p_data[0], p_data[1], p_data[2], 1.0);
-//            std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(v) << std::endl;
-            auto trp = dt_transformations[0] * v;
-//            std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(trp) << std::endl;
+//            std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(pos) << ", color : " << glm::to_string(color) << std::endl;
+//            if (!dt_transformations.empty()) {
+//                std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(dt_transformations[0] * glm::vec4(pos, 1.f)) << ", color : " << glm::to_string(color) << std::endl;
+//            }
             // @TODO: parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
 
             base += LE_ARRAY_DATA;
@@ -716,7 +711,7 @@ void VideoEngine::create_descriptor_set() {
     };
     TEST_VK_ASSERT(vkAllocateDescriptorSets(vk_device, &allocInfo, &vk_descriptor_set), "failed to allocate descriptor sets!");
 
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    VkDeviceSize bufferSize = UniformBufferObject::size_with_count(dt_transformations.size());
 
     create_buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -725,7 +720,7 @@ void VideoEngine::create_descriptor_set() {
     VkDescriptorBufferInfo bufferInfo = {
         .buffer = vk_uniform_buffer.buf,
         .offset = 0,
-        .range = sizeof(UniformBufferObject),
+        .range = bufferSize,
     };
 
     VkWriteDescriptorSet descriptorWrite = {
@@ -752,43 +747,32 @@ void VideoEngine::update_uniform_buffers() {
 
     auto altitude = er_view_get_alt(&*cl_view);
     auto gamma = er_view_get_gam(&*cl_view);
-//    auto scale = er_geodesy_scale(altitude);
-    auto scale = 0.0001f;
-//    std::cout << "scale: " << scale << std::endl;
+    auto scale = er_geodesy_scale(altitude);
 
     float zNear = er_geodesy_near(altitude, scale);
     float zFar = er_geodesy_far(altitude, gamma, scale);
 
-//    std::cout << "planes: " << zNear << ", " << zFar << std::endl;
-
-//    auto view = glm::scale(
-//            glm::lookAt(
-//                    eye, // eye
-//                    center, // center
-//                    glm::vec3(0.0f, 0.0f, 1.0f) // up
-//            ),
-//            glm::vec3(0.001f)
-//    );
-    auto view = glm::scale(glm::mat4(1.0f), glm::vec3(scale, scale, scale));
+    auto view = glm::lookAt(
+            eye, // eye
+            center, // center
+            glm::vec3(0.0f, 0.0f, 1.0f) // up
+    );
     auto projection = glm::perspective(
             glm::radians(45.0f),
-            (float) WIDTH / (float) HEIGHT,
-            1.f,
-            255.f
+            WIDTH / (float) HEIGHT,
+            zNear,
+            zFar
     );
+
+    /* GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted, this is
+    a compensation to render the image in the correct orientation */
     projection[1][1] *= -1;
 
 if (! dt_vertices.empty()) {
-//    std::cout << glm::to_string(view) << std::endl;
-//    std::cout << glm::to_string(projection) << std::endl;
-//    std::cout << glm::to_string(dt_transformations[0]) << std::endl;
-//    glm::vec4 v = glm::vec4(dt_vertices[0].pos, 1.0);
-//    std::cout << glm::to_string(v) << std::endl;
-//    std::cout << glm::to_string(dt_transformations[0] * v) << std::endl;
-//    std::cout << glm::to_string(view * projection * dt_transformations[0]) << std::endl;
-//    std::cout << glm::to_string(projection * dt_transformations[0] * v) << std::endl;
-//    std::cout << glm::to_string(view * projection * dt_transformations[0] * v) << std::endl;
-
+//    for (auto v: dt_vertices) {
+//        auto v4 = glm::vec4(v.pos, 1.f);
+//        std::cout << "[" << v.cell_id << "] " << glm::to_string(v4) << " ------> " << glm::to_string(projection * view * dt_transformations[v.cell_id] * v4) << std::endl;
+//    }
 }
     UniformBufferObject ubo = {
             .view = view,
@@ -798,8 +782,8 @@ if (! dt_vertices.empty()) {
     };
 
     void *data;
-    vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data);
-    memcpy(data, &ubo, sizeof(ubo));
+    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, VK_WHOLE_SIZE, 0, &data), "error while mapping transformation buffer memory");
+    memcpy(data, &ubo, ubo.size());
     vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
 }
 
