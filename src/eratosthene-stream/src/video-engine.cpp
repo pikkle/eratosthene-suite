@@ -230,6 +230,7 @@ void VideoEngine::fill_data() {
     dt_points.clear();
     dt_lines.clear();
     dt_triangles.clear();
+    dt_transformations.clear();
 
     /* angle variable */
     float er_lon = er_view_get_lon(&*cl_view);
@@ -253,8 +254,7 @@ void VideoEngine::fill_data() {
         auto cell = cl_model->md_cell + cell_id;
         auto base = le_array_get_byte(&cell->ce_data);
 
-        // transformation matrix computation (compute only once)
-        if (dt_transformations.size() < cl_model->md_size) {
+        if (dt_transformations.empty()) {
             le_real_t er_trans[3] = {
                     cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
                     cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
@@ -289,11 +289,6 @@ void VideoEngine::fill_data() {
             auto color = glm::vec3(c_data[0], c_data[1], c_data[2]) / 255.f; // color representation from 8bit integer to [0,1] float
             dt_vertices.push_back(Vertex{pos, color, cell_id});
             dt_points.push_back(point_id++);
-
-//            std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(pos) << ", color : " << glm::to_string(color) << std::endl;
-//            if (!dt_transformations.empty()) {
-//                std::cout << "v" << point_id << "[" << cell_id << "] : " << glm::to_string(dt_transformations[0] * glm::vec4(pos, 1.f)) << ", color : " << glm::to_string(color) << std::endl;
-//            }
             // @TODO: parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
 
             base += LE_ARRAY_DATA;
@@ -717,7 +712,8 @@ void VideoEngine::create_descriptor_set() {
     };
     TEST_VK_ASSERT(vkAllocateDescriptorSets(vk_device, &allocInfo, &vk_descriptor_set), "failed to allocate descriptor sets!");
 
-    VkDeviceSize bufferSize = UniformBufferObject::size_with_count(dt_transformations.size());
+//    VkDeviceSize bufferSize = UniformBufferObject::size_with_count(dt_transformations.size());
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
     create_buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -748,8 +744,8 @@ void VideoEngine::create_descriptor_set() {
 /* --------- Vulkan rendering methods --------- */
 
 void VideoEngine::update_uniform_buffers() {
-    auto eye = glm::vec3(1.f, 1.f, 1.f);
-    auto center = glm::vec3(0.0f, 0.0f, 0.f);
+    auto eye = glm::vec3(1, 1, 1);
+    auto center = glm::vec3(0, 0, -1);
 
     auto altitude = er_view_get_alt(&*cl_view);
     auto gamma = er_view_get_gam(&*cl_view);
@@ -758,15 +754,17 @@ void VideoEngine::update_uniform_buffers() {
     float zNear = er_geodesy_near(altitude, scale);
     float zFar = er_geodesy_far(altitude, gamma, scale);
 
-    auto view = glm::lookAt(
-            eye, // eye
-            center, // center
-            glm::vec3(0.0f, 0.0f, 1.0f) // up
-    );
+//    auto view = glm::lookAt(
+//            eye, // eye
+//            center, // center
+//            glm::vec3(0.0f, 0.0f, 1.0f) // up
+//    );
+    auto view = glm::scale(glm::mat4(1), glm::vec3(scale, scale, scale));
+//    auto view = glm::mat4(1);
     auto projection = glm::perspective(
             glm::radians(45.0f),
             WIDTH / (float) HEIGHT,
-            zNear,
+            .1f,
             zFar
     );
 
@@ -774,27 +772,43 @@ void VideoEngine::update_uniform_buffers() {
     a compensation to render the image in the correct orientation */
     projection[1][1] *= -1;
 
+//    dt_transformations.clear();
+//    dt_transformations.push_back(
+//            glm::rotate(
+//            glm::scale(glm::mat4(1), glm::vec3(0.00001f))
+//            glm::radians(-90.f),
+//                glm::vec3(1.f, 0, 0))
+//            );
+
 if (! dt_vertices.empty()) {
-//    for (auto v: dt_vertices) {
-//        auto v4 = glm::vec4(v.pos, 1.f);
-//        std::cout << "[" << v.cell_id << "] " << glm::to_string(v4) << " ------> " << glm::to_string(projection * view * dt_transformations[v.cell_id] * v4) << std::endl;
-//    }
+    for (auto v: dt_vertices) {
+        auto v4 = glm::vec4(v.pos, 1.f);
+        auto res = projection * view * dt_transformations[0] * v4;
+        auto simp = glm::vec3(res[0]/res[3], res[1]/res[3], res[2]/res[3]);
+        std::cout << glm::to_string(v4)
+            << " ------> " << glm::to_string(dt_transformations[0] * v4)
+            << " ------> " << glm::to_string(view * dt_transformations[0] * v4)
+            << " ------> " << glm::to_string(res)
+            << " ------> " << glm::to_string(simp) << std::endl;
+    }
 }
+
     UniformBufferObject ubo = {
             .view = view,
             .proj = projection,
-            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
-            .model = dt_transformations.data(),
+//            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
+            .model = dt_transformations[0],
     };
 
     void *data;
-    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, ubo.size(), 0, &data), "error while mapping transformation buffer memory");
-    memcpy(data, &ubo, ubo.size());
+    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data), "error while mapping transformation buffer memory");
+    memcpy(data, &ubo, sizeof(ubo));
     vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
 }
 
 void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
     mx_draw.lock();
+    // @TODO: only update storage buffer if data has been updated
     update_uniform_buffers();
     submit_work(vk_draw_command_buffer, vk_graphics_queue);
     mx_draw.unlock();

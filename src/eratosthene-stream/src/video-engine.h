@@ -46,7 +46,7 @@ private:
     std::shared_ptr<er_model_t> cl_model;
     std::shared_ptr<er_view_t> cl_view;
 
-    Transformations dt_transformations = {};
+    Transformations dt_transformations = {glm::mat4(1)};
     Vertices dt_vertices = {};
     Indices dt_triangles = {};
     Indices dt_lines = {};

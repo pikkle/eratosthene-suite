@@ -72,16 +72,16 @@ struct Vertex {
 struct UniformBufferObject {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
-    uint32_t modelCount;
-    glm::mat4 *model;
+//    uint32_t modelCount;
+    glm::mat4 model;
 
-    static size_t size_with_count(size_t count) {
-        return sizeof(view) + sizeof(proj) + sizeof(modelCount) + count * sizeof(*model);
-    }
-
-    size_t size() const {
-        return size_with_count(modelCount);
-    }
+//    static size_t size_with_count(size_t count) {
+//        return sizeof(view) + sizeof(proj) + sizeof(modelCount) + count * sizeof(*model);
+//    }
+//
+//    size_t size() const {
+//        return size_with_count(modelCount);
+//    }
 
 };
 
