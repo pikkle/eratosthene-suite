@@ -639,7 +639,7 @@ void VideoEngine::create_command_buffers() {
     TEST_VK_ASSERT(vkBeginCommandBuffer(vk_draw_command_buffer, &beginInfo), "failed to begin recording command buffer!");
 
     std::array<VkClearValue, 2> clearValues = {};
-    clearValues[0].color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    clearValues[0].color = { 0.f, 0.f, 0.f, 1.f };
     clearValues[1].depthStencil = { 1.0f, 0 };
     VkRenderPassBeginInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -744,8 +744,8 @@ void VideoEngine::create_descriptor_set() {
 /* --------- Vulkan rendering methods --------- */
 
 void VideoEngine::update_uniform_buffers() {
-    auto eye = glm::vec3(1, 1, 1);
-    auto center = glm::vec3(0, 0, -1);
+    auto eye = glm::vec3(0, 0, 0);
+    auto center = glm::vec3(-1, -1, -1);
 
     auto altitude = er_view_get_alt(&*cl_view);
     auto gamma = er_view_get_gam(&*cl_view);
@@ -754,31 +754,26 @@ void VideoEngine::update_uniform_buffers() {
     float zNear = er_geodesy_near(altitude, scale);
     float zFar = er_geodesy_far(altitude, gamma, scale);
 
-//    auto view = glm::lookAt(
-//            eye, // eye
-//            center, // center
-//            glm::vec3(0.0f, 0.0f, 1.0f) // up
-//    );
-    auto view = glm::scale(glm::mat4(1), glm::vec3(scale, scale, scale));
-//    auto view = glm::mat4(1);
+    auto view = glm::scale(
+            glm::lookAt(
+                    eye, // eye
+                    center, // center
+                    glm::vec3(0.0f, 0.0f, 1.0f) // up
+            ), glm::vec3(scale)
+    );
+
     auto projection = glm::perspective(
             glm::radians(45.0f),
             WIDTH / (float) HEIGHT,
-            .1f,
+            zNear,
             zFar
     );
 
     /* GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted, this is
     a compensation to render the image in the correct orientation */
+    projection[0][0] *= -1;
     projection[1][1] *= -1;
 
-//    dt_transformations.clear();
-//    dt_transformations.push_back(
-//            glm::rotate(
-//            glm::scale(glm::mat4(1), glm::vec3(0.00001f))
-//            glm::radians(-90.f),
-//                glm::vec3(1.f, 0, 0))
-//            );
 
 if (! dt_vertices.empty()) {
     for (auto v: dt_vertices) {
