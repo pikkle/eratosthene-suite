@@ -219,7 +219,7 @@ void VideoEngine::update_internal_data() {
     bind_data();
     create_render_pass();
     create_pipeline();
-    create_descriptor_set();
+//    create_descriptor_set();
     create_command_buffers();
     mx_draw.unlock();
 }
@@ -476,17 +476,25 @@ void VideoEngine::create_render_pass() {
 }
 
 void VideoEngine::create_pipeline() {
-    VkDescriptorSetLayoutBinding uboLayoutBinding = {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .pImmutableSamplers = nullptr,
-    };
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = {
+            {
+                    .binding = 0,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .descriptorCount = 1,
+                    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                    .pImmutableSamplers = nullptr,
+            },
+            {
+                    .binding = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .descriptorCount = 1,
+                    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+                    .pImmutableSamplers = nullptr,
+            }};
     VkDescriptorSetLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &uboLayoutBinding,
+        .bindingCount = static_cast<uint32_t>(layoutBindings.size()),
+        .pBindings = layoutBindings.data(),
     };
     TEST_VK_ASSERT(vkCreateDescriptorSetLayout(vk_device, &layoutInfo, nullptr, &vk_descriptor_set_layout), "failed to create descriptor set layout!");
 
@@ -685,15 +693,21 @@ void VideoEngine::create_command_buffers() {
 }
 
 void VideoEngine::create_descriptor_set() {
-    VkDescriptorPoolSize poolSize = {
-        .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .descriptorCount = 1,
+    std::vector<VkDescriptorPoolSize> poolSizes = {
+            {
+                    .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .descriptorCount = 1,
+            },
+            {
+                    .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .descriptorCount = 1,
+            }
     };
     VkDescriptorPoolCreateInfo poolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = 1,
-        .poolSizeCount = 1,
-        .pPoolSizes = &poolSize,
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+        .pPoolSizes = poolSizes.data(),
     };
     TEST_VK_ASSERT(vkCreateDescriptorPool(vk_device, &poolInfo, nullptr, &vk_descriptor_pool), "failed to create descriptor pool!");
 
@@ -705,30 +719,48 @@ void VideoEngine::create_descriptor_set() {
     };
     TEST_VK_ASSERT(vkAllocateDescriptorSets(vk_device, &allocInfo, &vk_descriptor_set), "failed to allocate descriptor sets!");
 
-//    VkDeviceSize bufferSize = UniformBufferObject::size_with_count(dt_transformations.size());
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    VkDeviceSize uniformBufferSize = sizeof(ViewProjBuffer);
+    VkDeviceSize storageBufferSize = sizeof(ModelsBuffer);
 
-    create_buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    create_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &vk_uniform_buffer, bufferSize);
+                  &vk_uniform_buffer, uniformBufferSize);
+    create_buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  &vk_storage_buffer, storageBufferSize);
 
-    VkDescriptorBufferInfo bufferInfo = {
-        .buffer = vk_uniform_buffer.buf,
-        .offset = 0,
-        .range = bufferSize,
+    VkDescriptorBufferInfo uniformBufferInfo = {
+            .buffer = vk_uniform_buffer.buf,
+            .offset = 0,
+            .range = uniformBufferSize,
+    };
+    VkDescriptorBufferInfo storageBufferInfo = {
+            .buffer = vk_storage_buffer.buf,
+            .offset = 0,
+            .range = storageBufferSize,
     };
 
-    VkWriteDescriptorSet descriptorWrite = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = vk_descriptor_set,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .pBufferInfo = &bufferInfo,
-    };
+    std::vector<VkWriteDescriptorSet> descriptorWrites = {
+            {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = vk_descriptor_set,
+                    .dstBinding = 0,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pBufferInfo = &uniformBufferInfo,
+            },
+            {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = vk_descriptor_set,
+                    .dstBinding = 1,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    .pBufferInfo = &storageBufferInfo,
+            }};
 
-    vkUpdateDescriptorSets(vk_device, 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(vk_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
 /* -------- End of vulkan setup methods ------- */
@@ -781,21 +813,29 @@ void VideoEngine::update_uniform_buffers() {
         }
     }
 //*/
-
-    UniformBufferObject ubo = {
-            .model_count = static_cast<uint32_t>(dt_transformations.size()),
+    // @TODO update if necessary
+    ViewProjBuffer vp_buffer = {
             .view = view,
             .proj = projection,
+    };
+    void *vp_data;
+    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(vp_buffer), 0, &vp_data), "error while mapping transformation buffer memory");
+    memcpy(vp_data, &vp_buffer, sizeof(vp_buffer));
+    vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
+
+    // @TODO update if necessary
+    ModelsBuffer m_buffer = {
+            .model_count = static_cast<uint32_t>(dt_transformations.size()),
             .models = {}
     };
     for (int i = 0; i < dt_transformations.size(); ++i) {
-        ubo.models[i] = dt_transformations[i];
+        m_buffer.models[i] = dt_transformations[i];
     }
 
-    void *data;
-    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data), "error while mapping transformation buffer memory");
-    memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
+    void *models_data;
+    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_storage_buffer.mem, 0, sizeof(m_buffer), 0, &models_data), "error while mapping transformation buffer memory");
+    memcpy(models_data, &m_buffer, sizeof(m_buffer));
+    vkUnmapMemory(vk_device, vk_storage_buffer.mem);
 }
 
 void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {

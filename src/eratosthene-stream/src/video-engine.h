@@ -102,6 +102,7 @@ private:
     BufferWrap vk_lines_buffer;
     BufferWrap vk_points_buffer;
     BufferWrap vk_uniform_buffer;
+    BufferWrap vk_storage_buffer;
 
     void setup_debugger();
     void create_device();

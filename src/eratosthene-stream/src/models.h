@@ -72,10 +72,13 @@ struct Vertex {
  * Transformation matrices to pass to the vertex shader
  * @TODO move models matrices to another storage buffer, and restore proj and view matrices to uniform buffer
  */
-struct UniformBufferObject {
-    alignas(4)  uint32_t model_count;
+struct ViewProjBuffer {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+};
+
+struct ModelsBuffer {
+    alignas(4)  uint32_t model_count;
     alignas(16) glm::mat4 models[MAX_CELLS_NUMBER];
 };
 
