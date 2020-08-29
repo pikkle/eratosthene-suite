@@ -113,7 +113,9 @@ void VideoEngine::create_phys_device() {
         if (supportedFeatures.samplerAnisotropy && supportedFeatures.vertexPipelineStoresAndAtomics) {
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(device, &deviceProperties);
-            printf("GPU selected: %s\n", deviceProperties.deviceName);
+            std::cout << "GPU selected: " << deviceProperties.deviceName << std::endl;
+            std::cout << "Buffer max storage: " << deviceProperties.limits.maxStorageBufferRange << std::endl;
+
             vk_phys_device = device;
             break;
         }
@@ -254,27 +256,25 @@ void VideoEngine::fill_data() {
         auto cell = cl_model->md_cell + cell_id;
         auto base = le_array_get_byte(&cell->ce_data);
 
-        if (dt_transformations.empty()) {
-            le_real_t er_trans[3] = {
-                    cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
-                    cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
-            };
-            // compute cell translation
-            er_trans[2] = cell->ce_edge[1] * er_sina - er_trans[1] * er_cosa;
-            er_trans[1] = cell->ce_edge[1] * er_cosa + er_trans[1] * er_sina;
+        le_real_t er_trans[3] = {
+                cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
+                cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
+        };
+        // compute cell translation
+        er_trans[2] = cell->ce_edge[1] * er_sina - er_trans[1] * er_cosa;
+        er_trans[1] = cell->ce_edge[1] * er_cosa + er_trans[1] * er_sina;
 
-            // cell translation
-            auto transformation = glm::translate(
-                    base_transformation,
-                    glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
-            );
+        // cell translation
+        auto transformation = glm::translate(
+                base_transformation,
+                glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
+        );
 
-            // cell rotation - planimetric rotation
-            transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
-            transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
-            dt_transformations.push_back(transformation);
+        // cell rotation - planimetric rotation
+        transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
+        transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
+        dt_transformations.push_back(transformation);
 
-        }
 
         // iterate over data in the cell
         for (le_size_t i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
@@ -490,17 +490,10 @@ void VideoEngine::create_pipeline() {
     };
     TEST_VK_ASSERT(vkCreateDescriptorSetLayout(vk_device, &layoutInfo, nullptr, &vk_descriptor_set_layout), "failed to create descriptor set layout!");
 
-    VkPushConstantRange pushConstantRange = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .offset = 0,
-        .size = sizeof(glm::mat4),
-    };
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
         .pSetLayouts = &vk_descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushConstantRange,
     };
     TEST_VK_ASSERT(vkCreatePipelineLayout(vk_device, &pipelineLayoutCreateInfo, nullptr, &vk_pipeline_layout), "error while creating pipeline layout");
 
@@ -774,26 +767,30 @@ void VideoEngine::update_uniform_buffers() {
     projection[0][0] *= -1;
     projection[1][1] *= -1;
 
-
-if (! dt_vertices.empty()) {
-    for (auto v: dt_vertices) {
-        auto v4 = glm::vec4(v.pos, 1.f);
-        auto res = projection * view * dt_transformations[0] * v4;
-        auto simp = glm::vec3(res[0]/res[3], res[1]/res[3], res[2]/res[3]);
-        std::cout << glm::to_string(v4)
-            << " ------> " << glm::to_string(dt_transformations[0] * v4)
-            << " ------> " << glm::to_string(view * dt_transformations[0] * v4)
-            << " ------> " << glm::to_string(res)
-            << " ------> " << glm::to_string(simp) << std::endl;
+///*
+    if (! dt_vertices.empty()) {
+        for (auto v: dt_vertices) {
+            auto v4 = glm::vec4(v.pos, 1.f);
+            auto res = projection * view * dt_transformations[0] * v4;
+            auto simp = glm::vec3(res[0]/res[3], res[1]/res[3], res[2]/res[3]);
+            std::cout << "[" << v.cell_id << "] -> " << glm::to_string(v4)
+                      << " ------> " << glm::to_string(dt_transformations[0] * v4)
+                      << " ------> " << glm::to_string(view * dt_transformations[0] * v4)
+                      << " ------> " << glm::to_string(res)
+                      << " ------> " << glm::to_string(simp) << std::endl;
+        }
     }
-}
+//*/
 
     UniformBufferObject ubo = {
+            .model_count = static_cast<uint32_t>(dt_transformations.size()),
             .view = view,
             .proj = projection,
-//            .modelCount = static_cast<uint32_t>(dt_transformations.size()),
-            .model = dt_transformations[0],
+            .models = {}
     };
+    for (int i = 0; i < dt_transformations.size(); ++i) {
+        ubo.models[i] = dt_transformations[i];
+    }
 
     void *data;
     TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(ubo), 0, &data), "error while mapping transformation buffer memory");

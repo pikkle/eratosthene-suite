@@ -6,6 +6,24 @@
 
 #include <nlohmann/json.hpp>
 
+/**
+ * List all possible client events that can be received from websocket
+ */
+enum ClientEvent {
+    EV_UNDEFINED,
+    EV_WHEEL_UP,
+    EV_WHEEL_DOWN,
+};
+
+/**
+ * Transforms the string received in json into the client event value
+ */
+ClientEvent resolveClientEvent(const std::string &e) {
+    if (e == "wheel_down") return EV_WHEEL_DOWN;
+    if (e == "wheel_up") return EV_WHEEL_UP;
+    return EV_UNDEFINED;
+}
+
 VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port) {
     vc_data_client = new DataClient(data_server_ip, data_server_port);
     cl_model = vc_data_client->get_model();
@@ -26,12 +44,29 @@ void VideoClient::handle_message(const ix::WebSocketMessagePtr &msg,
         try {
             // parse json
             auto j = nlohmann::json::parse(msg.get()->str.data());
-            // @TODO check that json is consistent on what is expected
+
+            // read client events
+            if (j.contains("client_event")) {
+                auto str_event = (std::string) j["client_event"];
+                ClientEvent event = resolveClientEvent(str_event);
+                switch(event) {
+                    case EV_WHEEL_DOWN:
+                        // @TODO: take into account modifiers (ctrl or alt) for speed zoom
+                        cl_inertia = er_view_get_inertia(&*cl_view, ER_COMMON_KMCTL);
+                        er_view_set_alt( &*cl_view, + cl_inertia );
+                        break;
+                    case EV_WHEEL_UP:
+                        cl_inertia = er_view_get_inertia(&*cl_view, ER_COMMON_KMCTL);
+                        er_view_set_alt( &*cl_view, - cl_inertia );
+                        break;
+                    default:
+                        std::cerr << "Unrecognized client event \"" << str_event << "\"" << std::endl;
+                        break;
+                }
+            }
 
             // create transform of the scene to pass to the engine for further frames redraw
             // @TODO update er_client_view depending on the inputs received in the json
-            // Ex:
-            // float rotation = (float) j["rotate_x"];
         } catch (std::exception &e) {
             std::cerr << "Got a malformed json object :" << std::endl << msg.get()->str << std::endl;
         }
@@ -92,8 +127,8 @@ void VideoClient::loops_update(std::shared_ptr<ix::ConnectionState> connectionSt
                 vc_video_engine->update_internal_data();
             }
 
-            connectionState->setTerminated();
-            return; // @TODO keep updating
+//            connectionState->setTerminated();
+//            return; // @TODO keep updating
         }
     });
     t.detach();

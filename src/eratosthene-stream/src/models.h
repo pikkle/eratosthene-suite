@@ -13,6 +13,8 @@
 #include <optional>
 #include <vector>
 
+const uint MAX_CELLS_NUMBER = 32767;
+
 namespace StreamModels {
 
 struct Vertex {
@@ -68,21 +70,13 @@ struct Vertex {
 
 /*!
  * Transformation matrices to pass to the vertex shader
+ * @TODO move models matrices to another storage buffer, and restore proj and view matrices to uniform buffer
  */
 struct UniformBufferObject {
+    alignas(4)  uint32_t model_count;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
-//    uint32_t modelCount;
-    glm::mat4 model;
-
-//    static size_t size_with_count(size_t count) {
-//        return sizeof(view) + sizeof(proj) + sizeof(modelCount) + count * sizeof(*model);
-//    }
-//
-//    size_t size() const {
-//        return size_with_count(modelCount);
-//    }
-
+    alignas(16) glm::mat4 models[MAX_CELLS_NUMBER];
 };
 
 /*!

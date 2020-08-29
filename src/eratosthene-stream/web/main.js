@@ -1,3 +1,12 @@
+// js-hacky way to use enum
+const client_events = {
+    WHEEL_UP: "wheel_up",
+    WHEEL_DOWN: "wheel_down",
+    MODIFIERS: {
+        LEFT_MOUSE: "mod_left_mouse",
+    }
+};
+
 let connect = function() {
     document.getElementById("connectButton").disabled = true;
     let port = document.getElementById("portInput").value;
@@ -12,25 +21,26 @@ let connect = function() {
 
     socket.onopen = function(event) {
         console.log(event);
-        var s = this;
+        var self = this;
         console.log("Connection opened");
 
         this.onmessage = function(event) {
             console.log("Message received");
-            // @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
+            // @TODO @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
+            // @TODO check that the received message contains an image before updating
             update_image(event.data);
-            // this.close();
         }
-        document.addEventListener("keydown", function onPress(event) {
-            let transform = {
-                rotate_x : 0,
-                rotate_y : 0,
-                rotate_z : 0,
-                translate_camera_x : 0,
-                translate_camera_y : 0,
-                translate_camera_z : 0,
-                zoom : 0,
+
+        let interaction_callback = function(event, modifiers = []) {
+            let data = {
+                client_event: event,
+                client_event_mods: modifiers,
             };
+            console.log(data);
+            self.send(JSON.stringify(data));
+        }
+/*
+        document.addEventListener("keydown", function onPress(event) {
             switch (event.key) {
                 case "ArrowLeft":
                     transform.rotate_z = +factor; break;
@@ -41,10 +51,15 @@ let connect = function() {
                 case "ArrowDown":
                     transform.zoom = -factor; break;
             }
-            console.log("Sending object :");
-            console.log(transform);
-            s.send(JSON.stringify(transform));
         });
+        */
+        document.onwheel = function(event) {
+            if (event.deltaY < 0) {
+                interaction_callback(client_events.WHEEL_DOWN);
+            } else {
+                interaction_callback(client_events.WHEEL_UP);
+            }
+        }
     }
 
     socket.onclose = function(event) {
@@ -55,5 +70,6 @@ let connect = function() {
         let image_elem = document.getElementById("frame");
         image_elem.src = "data:image/jpg;base64," + image_data;
     }
+
 }
 

@@ -20,8 +20,8 @@ typedef std::vector<uint32_t> Indices;
 typedef std::vector<glm::mat4> Transformations;
 
 // @TODO: change size depending on the client's resolution (with some max resolution TBD)
-const int WIDTH = 1600;
-const int HEIGHT = 1200;
+const uint WIDTH = 1600;
+const uint HEIGHT = 1200;
 const float FPS = 60.f; // @TODO: adapt the frames rendered based on target FPS
 
 class VideoEngine {
