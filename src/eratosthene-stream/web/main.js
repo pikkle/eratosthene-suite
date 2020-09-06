@@ -1,11 +1,28 @@
 // js-hacky way to use enum
+// @TODO @OPTIM to handle lighter messages, this could be changed to a single int with a flag system
 const client_events = {
     WHEEL_UP: "wheel_up",
     WHEEL_DOWN: "wheel_down",
+    LEFT_MOUSE_MOVEMENT: "left_mouse_move",
+    RIGHT_MOUSE_MOVEMENT: "right_mouse_move",
     MODIFIERS: {
         LEFT_MOUSE: "mod_left_mouse",
-    }
+    },
 };
+
+document.pointerLockElement = document.pointerLockElement    ||
+    document.mozPointerLockElement ||
+    document.webkitPointerLockElement;
+
+let pointer_locked = false;
+function pointerLockChange() {
+    pointer_locked = !!document.pointerLockElement;
+}
+
+document.addEventListener('pointerlockchange', pointerLockChange, false);
+document.addEventListener('mozpointerlockchange', pointerLockChange, false);
+document.addEventListener('webkitpointerlockchange', pointerLockChange, false);
+
 
 let connect = function() {
     document.getElementById("connectButton").disabled = true;
@@ -13,6 +30,20 @@ let connect = function() {
     let address = "ws://127.0.0.1:" + port.toString() + "/stream";
     let socket = new WebSocket(address);
     let factor = 0.5;
+    let canvas = document.getElementById("canvas_stream");
+
+    // compatibility to request pointer lock on canvas
+    // https://developer.mozilla.org/fr/docs/WebAPI/Pointer_Lock
+    canvas.requestPointerLock = canvas.requestPointerLock ||
+        canvas.mozRequestPointerLock ||
+        canvas.webkitPointerLockElement;
+
+    // capture mouse in canvas
+    canvas.onclick = function(event) {
+        if (!pointer_locked) {
+            canvas.requestPointerLock();
+        }
+    }
 
     socket.onerror = function(error) {
         console.error(error);
@@ -25,39 +56,57 @@ let connect = function() {
         console.log("Connection opened");
 
         this.onmessage = function(event) {
-            console.log("Message received");
             // @TODO @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
             // @TODO check that the received message contains an image before updating
             update_image(event.data);
         }
 
-        let interaction_callback = function(event, modifiers = []) {
-            let data = {
+        // callback to send inputs to the streaming server
+        let interaction_callback = function(event, modifiers = [], data = {}) {
+            let payload = {
                 client_event: event,
                 client_event_mods: modifiers,
+                client_event_data: data,
             };
-            console.log(data);
-            self.send(JSON.stringify(data));
+            self.send(JSON.stringify(payload));
         }
-/*
-        document.addEventListener("keydown", function onPress(event) {
+
+        // keyboard registration
+        document.onkeydown = function(event) {
             switch (event.key) {
+                /*
                 case "ArrowLeft":
                     transform.rotate_z = +factor; break;
-                case "ArrowRight":
-                    transform.rotate_z = -factor; break;
-                case "ArrowUp":
-                    transform.zoom = +factor; break;
-                case "ArrowDown":
-                    transform.zoom = -factor; break;
+                */
             }
-        });
-        */
+        }
+
+        // mouse wheel registration
         document.onwheel = function(event) {
-            if (event.deltaY < 0) {
-                interaction_callback(client_events.WHEEL_DOWN);
-            } else {
-                interaction_callback(client_events.WHEEL_UP);
+            if (pointer_locked) {
+                if (event.deltaY < 0) {
+                    interaction_callback(client_events.WHEEL_DOWN);
+                } else {
+                    interaction_callback(client_events.WHEEL_UP);
+                }
+            }
+        }
+
+        // mouse movements registration
+        document.onmousemove = function(event) {
+            if (pointer_locked) {
+                let movement_data = {
+                    "dx" : event.movementX,
+                    "dy" : event.movementY,
+                };
+                switch (event.buttons) {
+                    case 1: // left click drag
+                        interaction_callback(client_events.LEFT_MOUSE_MOVEMENT, [], movement_data);
+                        break;
+                    case 2: // right click drag
+                        interaction_callback(client_events.RIGHT_MOUSE_MOVEMENT, [], movement_data);
+                        break;
+                }
             }
         }
     }
@@ -67,8 +116,14 @@ let connect = function() {
     }
 
     let update_image = function(image_data) {
+        var i = new Image();
+        i.onload = function(){
+            canvas.width = i.width;
+            canvas.height = i.height;
+        };
+        i.src = "data:image/jpg;base64," + image_data;
+        canvas.style.background = "url(" + i.src + ")";
         let image_elem = document.getElementById("frame");
-        image_elem.src = "data:image/jpg;base64," + image_data;
     }
 
 }

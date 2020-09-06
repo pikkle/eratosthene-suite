@@ -13,6 +13,8 @@ enum ClientEvent {
     EV_UNDEFINED,
     EV_WHEEL_UP,
     EV_WHEEL_DOWN,
+    EV_LEFT_MOUSE_MOVEMENT,
+    EV_RIGHT_MOUSE_MOVEMENT,
 };
 
 /**
@@ -21,6 +23,8 @@ enum ClientEvent {
 ClientEvent resolveClientEvent(const std::string &e) {
     if (e == "wheel_down") return EV_WHEEL_DOWN;
     if (e == "wheel_up") return EV_WHEEL_UP;
+    if (e == "left_mouse_move") return EV_LEFT_MOUSE_MOVEMENT;
+    if (e == "right_mouse_move") return EV_RIGHT_MOUSE_MOVEMENT;
     return EV_UNDEFINED;
 }
 
@@ -35,7 +39,7 @@ VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_p
 VideoClient::~VideoClient() {
     delete(vc_data_client);
     delete(vc_video_engine);
-    delete(vc_video_streamer);
+//    delete(vc_video_streamer);
 }
 
 void VideoClient::handle_message(const ix::WebSocketMessagePtr &msg,
@@ -47,20 +51,49 @@ void VideoClient::handle_message(const ix::WebSocketMessagePtr &msg,
 
             // read client events
             if (j.contains("client_event")) {
-                auto str_event = (std::string) j["client_event"];
-                ClientEvent event = resolveClientEvent(str_event);
+                auto event_name = (std::string) j["client_event"];
+                auto mods = j["client_event_mods"];
+                auto data = j["client_event_data"];
+                le_real_t dx, dy;
+
+                // read data values
+                if (data.contains("dx")) dx = (le_real_t) (int) data["dx"];
+                if (data.contains("dy")) dy = (le_real_t) (int) data["dy"];
+
+                // resolve event
+                ClientEvent event = resolveClientEvent(event_name);
                 switch(event) {
                     case EV_WHEEL_DOWN:
                         // @TODO: take into account modifiers (ctrl or alt) for speed zoom
-                        cl_inertia = er_view_get_inertia(&*cl_view, ER_COMMON_KMCTL);
+                        cl_inertia = er_view_get_inertia(&*cl_view, 0);
                         er_view_set_alt( &*cl_view, + cl_inertia );
                         break;
+
                     case EV_WHEEL_UP:
-                        cl_inertia = er_view_get_inertia(&*cl_view, ER_COMMON_KMCTL);
+                        cl_inertia = er_view_get_inertia(&*cl_view, 0);
                         er_view_set_alt( &*cl_view, - cl_inertia );
                         break;
+
+                    case EV_LEFT_MOUSE_MOVEMENT:
+                        cl_inertia = er_view_get_inertia( &*cl_view,  0);
+                        /* apply inertia */
+                        dx *= ER_COMMON_INP * cl_inertia;
+                        dy *= ER_COMMON_INP * cl_inertia;
+                        /* update view position */
+                        er_view_set_plan(&*cl_view, dx, dy);
+                        break;
+
+                    case EV_RIGHT_MOUSE_MOVEMENT:
+                        /* apply inertia */
+                        dx *= ER_COMMON_INR;
+                        dy *= ER_COMMON_INR;
+                        /* update view direction */
+                        er_view_set_azm(&*cl_view, - dx );
+                        er_view_set_gam(&*cl_view, + dy );
+                        break;
+
                     default:
-                        std::cerr << "Unrecognized client event \"" << str_event << "\"" << std::endl;
+                        std::cerr << "Unrecognized client event \"" << event_name << "\"" << std::endl;
                         break;
                 }
             }
@@ -127,8 +160,6 @@ void VideoClient::loops_update(std::shared_ptr<ix::ConnectionState> connectionSt
                 vc_video_engine->update_internal_data();
             }
 
-//            connectionState->setTerminated();
-//            return; // @TODO keep updating
         }
     });
     t.detach();
