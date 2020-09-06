@@ -37,8 +37,8 @@ VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_p
 }
 
 VideoClient::~VideoClient() {
-    delete(vc_data_client);
     delete(vc_video_engine);
+    delete(vc_data_client);
 //    delete(vc_video_streamer);
 }
 
@@ -156,10 +156,7 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
 void VideoClient::loops_update(std::shared_ptr<ix::ConnectionState> connectionState, le_size_t delay) {
     std::thread t([this, delay, connectionState]() {
         while (!connectionState->isTerminated()) {
-            while (vc_data_client->update_model(&*cl_view, delay)) {
-                vc_video_engine->update_internal_data();
-            }
-
+            while (vc_data_client->update_model(&*cl_view, delay));
         }
     });
     t.detach();

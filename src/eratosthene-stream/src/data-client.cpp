@@ -59,14 +59,15 @@ void DataClient::set_server() {
 
 bool DataClient::update_model(const er_view_t* view, le_size_t delay) {
     le_address_t er_address = LE_ADDRESS_C;
+    auto now = clock();
 
     /* motion detection */
     if (!er_view_get_equal(&dc_push, view)) {
         dc_push = *view;
-        dc_last = clock();
+        dc_last = now;
     }
 
-    if ((clock() - dc_last) > delay) {
+    if ((now - dc_last) > delay) {
         /* retreive address times */
         er_address = er_view_get_times(view);
         /* prepare model update */

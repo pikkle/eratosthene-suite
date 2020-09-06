@@ -8,6 +8,7 @@
 #include <eratosthene-client-view.h>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 #include "models.h"
 #include "utils.h"
@@ -23,6 +24,11 @@ typedef std::vector<glm::mat4> Transformations;
 const uint WIDTH = 1600;
 const uint HEIGHT = 1200;
 const float FPS = 60.f; // @TODO: adapt the frames rendered based on target FPS
+
+struct ViewState {
+    bool running;
+    size_t transformations_size;
+};
 
 class VideoEngine {
 public:
@@ -45,6 +51,8 @@ private:
 
     std::shared_ptr<er_model_t> cl_model;
     std::shared_ptr<er_view_t> cl_view;
+
+    ViewState cl_displayed_state;
 
     Transformations dt_transformations = {glm::mat4(1)};
     Vertices dt_vertices = {};

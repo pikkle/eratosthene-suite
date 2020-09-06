@@ -52,11 +52,24 @@ VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_v
     create_pipeline();
     create_descriptor_set();
     create_command_buffers();
+
+    cl_displayed_state.running = true;
+    cl_displayed_state.transformations_size = 0;
+
+    std::thread cl_data_updater([this](){
+        while (this->cl_displayed_state.running) {
+            if (!this->cl_model->md_sync) {
+                this->update_internal_data();
+            }
+        }
+    });
+    cl_data_updater.detach();
 }
 
 VideoEngine::~VideoEngine() {
     // @TODO: free up all vulkan objects
     std::cerr << "Freeing up a engine instance..." << std::endl;
+    cl_displayed_state.running = false;
     vkFreeCommandBuffers(vk_device, vk_graphics_command_pool, 1, &vk_draw_command_buffer);
     vkFreeCommandBuffers(vk_device, vk_transfer_command_pool, 1, &vk_copy_command_buffer);
     vkDestroyCommandPool(vk_device, vk_graphics_command_pool, nullptr);
@@ -129,27 +142,16 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
 }
 
 void VideoEngine::setup_debugger() {
-//    VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
-//        .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
-//        .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
-//        .pfnCallback = (PFN_vkDebugReportCallbackEXT) debug_callback,
-//    };
-//    auto vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
-//            vkGetInstanceProcAddr(vk_instance, "vkCreateDebugReportCallbackEXT"));
-//    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(vk_instance, &debugReportCreateInfo, nullptr, &vk_debug_report),
-//                   "error while creating debug reporter");
-    if (validation_layers.empty()) return;
-
-    VkDebugUtilsMessengerCreateInfoEXT createInfo = {
-            .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = debugCallback,
+    VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
+        .flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT,
+        .pfnCallback = (PFN_vkDebugReportCallbackEXT) debug_callback,
     };
+    auto vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(
+            vkGetInstanceProcAddr(vk_instance, "vkCreateDebugReportCallbackEXT"));
+    TEST_VK_ASSERT(vkCreateDebugReportCallbackEXT(vk_instance, &debugReportCreateInfo, nullptr, &vk_debug_report),
+                   "error while creating debug reporter");
 
-    if (create_debug(vk_instance, &createInfo, nullptr, &vk_debug_messenger) != VK_SUCCESS) {
-        throw std::runtime_error("failed to set up debug messenger!");
-    }
 }
 
 void VideoEngine::create_device() {
@@ -219,7 +221,6 @@ void VideoEngine::update_internal_data() {
     bind_data();
     create_render_pass();
     create_pipeline();
-//    create_descriptor_set();
     create_command_buffers();
     mx_draw.unlock();
 }
@@ -227,7 +228,6 @@ void VideoEngine::update_internal_data() {
 void VideoEngine::fill_data() {
     // Temporarily reclean all the time data to be display
     // @TODO @OPTIM only remove data that is not anymore shown and only add fresh data
-    // @TODO unmap memory that is removed on GPU !
     dt_vertices.clear();
     dt_points.clear();
     dt_lines.clear();
@@ -275,9 +275,8 @@ void VideoEngine::fill_data() {
         transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
         dt_transformations.push_back(transformation);
 
-
         // iterate over data in the cell
-        for (le_size_t i = 0; i < le_array_get_size(&cell->ce_data) / LE_ARRAY_DATA; ++i) {
+        for (le_size_t i = 0; i < er_cell_get_record(&*cell); ++i) {
             // main pointer on the vertex, and points directly to the vertex coordinates
             le_real_t *p_data = reinterpret_cast<le_real_t *>(base);
 
@@ -294,6 +293,8 @@ void VideoEngine::fill_data() {
             base += LE_ARRAY_DATA;
         }
     }
+
+    cl_displayed_state.transformations_size = dt_transformations.size();
 }
 
 void VideoEngine::bind_data() {
@@ -305,7 +306,6 @@ void VideoEngine::bind_data() {
 
     // Vertices
     if (!dt_vertices.empty()) {
-//        std::cerr << "Loaded " << dt_vertices.size() << " vertices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, vertexBufferSize, (void *) dt_vertices.data());
@@ -319,11 +319,10 @@ void VideoEngine::bind_data() {
 
     // Triangles
     if (!dt_triangles.empty()) {
-        std::cerr << "Loaded " << dt_triangles.size() << " triangle indices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, triangleBufferSize, (void *) dt_triangles.data());
-    delete_buffer(&vk_triangles_buffer);
+        delete_buffer(&vk_triangles_buffer);
         create_buffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                       &vk_triangles_buffer, triangleBufferSize);
@@ -332,7 +331,6 @@ void VideoEngine::bind_data() {
 
     // Lines
     if (!dt_lines.empty()) {
-        std::cerr << "Loaded " << dt_lines.size() << " line indices in gpu memory" << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, lineBufferSize, (void *) dt_lines.data());
@@ -345,7 +343,6 @@ void VideoEngine::bind_data() {
 
     // Points
     if (!dt_points.empty()) {
-//        std::cerr << "Loaded " << dt_points.size() << " point indices in gpu memory " << std::endl;
         create_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       &stagingWrap, pointBufferSize, (void *) dt_points.data());
@@ -769,23 +766,34 @@ void VideoEngine::create_descriptor_set() {
 /* --------- Vulkan rendering methods --------- */
 
 void VideoEngine::update_uniform_buffers() {
-    auto eye = glm::vec3(0, 0, 0);
-    auto center = glm::vec3(-1, -1, -1);
-
     auto altitude = er_view_get_alt(&*cl_view);
     auto gamma = er_view_get_gam(&*cl_view);
     auto scale = er_geodesy_scale(altitude);
 
-    float zNear = er_geodesy_near(altitude, scale);
-    float zFar = er_geodesy_far(altitude, gamma, scale);
+    auto center = glm::vec3(0, 0, 0);
 
-    auto view = glm::scale(
-            glm::lookAt(
-                    eye, // eye
-                    center, // center
-                    glm::vec3(0.0f, 0.0f, 1.0f) // up
-            ), glm::vec3(scale)
-    );
+    auto edge = glm::vec3(458302.736784, 4597902.204257, 4397020.105992);
+
+    le_real_t alt = altitude;
+    le_real_t lon = LE_D2R * er_view_get_lon(&*cl_view);
+    le_real_t lat = LE_D2R * er_view_get_lat(&*cl_view);
+    le_real_t er_optima = lon;
+    le_real_t er_optimb = lat;
+    lat = alt * sin(er_optimb) - edge[1];
+    alt = alt * cos(er_optimb);
+    lon = alt * sin(er_optima) - edge[0];
+    alt = alt * cos(er_optima) - edge[2];
+    auto eye = glm::vec3(lon, lat, alt);
+    auto forward = glm::normalize(center-eye);
+    auto right = -glm::cross(glm::vec3(0, 0, 1), forward);
+    auto up = glm::cross(forward, right);
+
+//    std::cout << glm::to_string(eye) << std::endl;
+
+    float zNear = 0.1f;
+    float zFar = 2*altitude - LE_ADDRESS_WGS_A;
+
+    auto view = glm::lookAt(eye, center, up);
 
     auto projection = glm::perspective(
             glm::radians(45.0f),
@@ -796,8 +804,7 @@ void VideoEngine::update_uniform_buffers() {
 
     /* GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted, this is
     a compensation to render the image in the correct orientation */
-    projection[0][0] *= -1;
-    projection[1][1] *= -1;
+//    projection[0][0] *= -1;
 
 ///*
     if (! dt_vertices.empty()) {
@@ -806,10 +813,10 @@ void VideoEngine::update_uniform_buffers() {
             auto res = projection * view * dt_transformations[0] * v4;
             auto simp = glm::vec3(res[0]/res[3], res[1]/res[3], res[2]/res[3]);
             std::cout << "[" << v.cell_id << "] -> " << glm::to_string(v4)
-                      << " ------> " << glm::to_string(dt_transformations[0] * v4)
-                      << " ------> " << glm::to_string(view * dt_transformations[0] * v4)
-                      << " ------> " << glm::to_string(res)
-                      << " ------> " << glm::to_string(simp) << std::endl;
+                      << " --> " << glm::to_string(dt_transformations[0] * v4)
+                      << " --> " << glm::to_string(view * dt_transformations[0] * v4)
+                      << " --> " << glm::to_string(res)
+                      << " --> " << glm::to_string(simp) << std::endl;
         }
     }
 //*/
