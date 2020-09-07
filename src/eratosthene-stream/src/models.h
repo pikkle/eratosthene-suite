@@ -24,9 +24,6 @@ struct Vertex {
     /*! color of the vertex */
     glm::vec3 color;
 
-    /*! Used to identify the cell in which the vertex belongs to, in order to apply the appropriate transformation matrix */
-    uint32_t cell_id;
-
     /*!
      * A vertex binding describes at which rate to load data from memory throughout the vertices.
      * It specifies the number of bytes between data entries and whether to move to the next data
@@ -46,8 +43,8 @@ struct Vertex {
      * vertex data originating from a binding description. We have two attributes, position and color,
      * so we need two attribute description structs.
      */
-    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = {};
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions = {};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -59,11 +56,6 @@ struct Vertex {
         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
 
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].format = VK_FORMAT_R32_UINT;
-        attributeDescriptions[2].offset = offsetof(Vertex, cell_id);
-
         return attributeDescriptions;
     };
 };
@@ -72,15 +64,12 @@ struct Vertex {
  * Transformation matrices to pass to the vertex shader
  * @TODO move models matrices to another storage buffer, and restore proj and view matrices to uniform buffer
  */
-struct ViewProjBuffer {
+struct MatrixBuffer {
+    alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
 };
 
-struct ModelsBuffer {
-    alignas(4)  uint32_t model_count;
-    alignas(16) glm::mat4 models[MAX_CELLS_NUMBER];
-};
 
 /*!
  * A collection of what composes an image in vulkan

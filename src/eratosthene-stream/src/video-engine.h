@@ -18,16 +18,11 @@ using namespace StreamUtils;
 
 typedef std::vector<Vertex> Vertices;
 typedef std::vector<uint32_t> Indices;
-typedef std::vector<glm::mat4> Transformations;
 
-// @TODO: change size depending on the client's resolution (with some max resolution TBD)
-const uint WIDTH = 1600;
-const uint HEIGHT = 1200;
 const float FPS = 60.f; // @TODO: adapt the frames rendered based on target FPS
 
 struct ViewState {
     bool running;
-    size_t transformations_size;
 };
 
 class VideoEngine {
@@ -36,11 +31,20 @@ public:
     ~VideoEngine();
     void draw_frame(char *imagedata, VkSubresourceLayout subresourceLayout);
 
-    static const size_t er_imagedata_size;
+    size_t er_imagedata_size;
 
     void update_internal_data();
 
+    void set_size(uint32_t width, uint32_t height);
+
+    uint32_t get_width() const;
+
+    uint32_t get_height() const;
+
 private:
+    uint32_t cl_width = 1600;
+    uint32_t cl_height = 1200;
+
     /* Shared vulkan objects among all engines running */
     static VkInstance vk_instance;
     static VkPhysicalDevice vk_phys_device;
@@ -54,7 +58,6 @@ private:
 
     ViewState cl_displayed_state;
 
-    Transformations dt_transformations = {glm::mat4(1)};
     Vertices dt_vertices = {};
     Indices dt_triangles = {};
     Indices dt_lines = {};
@@ -110,7 +113,6 @@ private:
     BufferWrap vk_lines_buffer;
     BufferWrap vk_points_buffer;
     BufferWrap vk_uniform_buffer;
-    BufferWrap vk_storage_buffer;
 
     void setup_debugger();
     void create_device();

@@ -32,11 +32,10 @@ const std::vector<const char *> extensions = {
 
 VkInstance VideoEngine::vk_instance = nullptr;
 VkPhysicalDevice VideoEngine::vk_phys_device = nullptr;
-const size_t VideoEngine::er_imagedata_size = sizeof(uint8_t) * 4 * WIDTH * HEIGHT;
 
 
-VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_view_t> view)
-        : cl_model(model), cl_view(view) {
+VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_view_t> view) : cl_model(model), cl_view(view) {
+    er_imagedata_size = sizeof(uint8_t) * 4 * cl_width * cl_height;
     if (!VideoEngine::vk_instance && !vk_phys_device) {
         create_instance();
         create_phys_device();
@@ -54,13 +53,10 @@ VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_v
     create_command_buffers();
 
     cl_displayed_state.running = true;
-    cl_displayed_state.transformations_size = 0;
 
     std::thread cl_data_updater([this](){
         while (this->cl_displayed_state.running) {
-            if (!this->cl_model->md_sync) {
-                this->update_internal_data();
-            }
+            this->update_internal_data();
         }
     });
     cl_data_updater.detach();
@@ -76,7 +72,6 @@ VideoEngine::~VideoEngine() {
     vkDestroyCommandPool(vk_device, vk_transfer_command_pool, nullptr);
     vkDestroyCommandPool(vk_device, vk_binding_command_pool, nullptr);
 }
-
 
 void VideoEngine::create_instance() {
     VkApplicationInfo appInfo = {
@@ -114,7 +109,7 @@ void VideoEngine::create_instance() {
 void VideoEngine::create_phys_device() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(vk_instance, &deviceCount, nullptr);
-    TEST_ASSERT(deviceCount > 0, "failed to find GPUs with Vulkan support!");
+    TEST_ASSERT(deviceCount > 0, "Failed to find GPUs with Vulkan support!");
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(vk_instance, &deviceCount, devices.data());
@@ -126,15 +121,18 @@ void VideoEngine::create_phys_device() {
         if (supportedFeatures.samplerAnisotropy && supportedFeatures.vertexPipelineStoresAndAtomics) {
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(device, &deviceProperties);
-            std::cout << "GPU selected: " << deviceProperties.deviceName << std::endl;
-            std::cout << "Buffer max storage: " << deviceProperties.limits.maxStorageBufferRange << std::endl;
+            std::cout << "GPU selected: " << deviceProperties.deviceName << " [" << deviceProperties.deviceID << "]" << std::endl;
+            std::cout << "API Version: " << deviceProperties.apiVersion << std::endl;
+            std::cout << "Driver Version: " << deviceProperties.driverVersion << std::endl;
+//            std::cout << "Buffer max storage: " << deviceProperties.limits.maxStorageBufferRange << std::endl;
 
             vk_phys_device = device;
             break;
         }
     }
-    TEST_ASSERT(vk_phys_device != VK_NULL_HANDLE, "failed to find a suitable GPU!");
+    TEST_ASSERT(vk_phys_device != VK_NULL_HANDLE, "Failed to find a suitable GPU!");
 }
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
     std::cerr << pCallbackData->pMessage << std::endl;
 
@@ -178,6 +176,7 @@ void VideoEngine::create_device() {
         if (queueFamilyProperties[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !(has_tq)) {
             transferQueueInfo.queueFamilyIndex = vk_transfer_queue_family_index = i;
             transferQueueInfo.queueCount = 2; // we need two queues of transfer, one for data binding to the gpu and one to retrieve rendered image data
+            // @TODO @SUPPORT in case of support for only one transfer queue, we need to change the behaviour of the whole engine
             has_tq = true;
             continue;
         }
@@ -186,6 +185,7 @@ void VideoEngine::create_device() {
 
     VkPhysicalDeviceFeatures features {
         .vertexPipelineStoresAndAtomics = true,
+        .shaderFloat64 = true,
     };
 
     VkDeviceCreateInfo deviceCreateInfo = {
@@ -216,12 +216,33 @@ void VideoEngine::create_command_pool() {
 }
 
 void VideoEngine::update_internal_data() {
-    mx_draw.lock();
+    // @TODO @OPTIM refresh internal data whenever there is a change in the model
+//    mx_draw.lock();
     fill_data();
     bind_data();
-    create_render_pass();
     create_pipeline();
     create_command_buffers();
+//    mx_draw.unlock();
+}
+
+void VideoEngine::set_size(uint32_t width, uint32_t height) {
+    mx_draw.lock();
+    mx_copy.lock();
+    mx_bind.lock();
+    std::cout << "Changing screen size to " << width << "x" << height << std::endl;
+
+    this->cl_width = width;
+    this->cl_height = height;
+    er_imagedata_size = sizeof(uint8_t) * 4 * cl_width * cl_height;
+
+    create_attachments();
+    create_render_pass();
+    create_pipeline();
+    create_descriptor_set();
+    create_command_buffers();
+
+    mx_bind.unlock();
+    mx_copy.unlock();
     mx_draw.unlock();
 }
 
@@ -232,69 +253,34 @@ void VideoEngine::fill_data() {
     dt_points.clear();
     dt_lines.clear();
     dt_triangles.clear();
-    dt_transformations.clear();
-
-    /* angle variable */
-    float er_lon = er_view_get_lon(&*cl_view);
-    float er_lat = er_view_get_lat(&*cl_view);
-
-    /* trigonometric variable */
-    le_real_t er_cosl = cos(-er_lon * LE_D2R);
-    le_real_t er_sinl = sin(-er_lon * LE_D2R);
-    le_real_t er_cosa = cos(+er_lat * LE_D2R);
-    le_real_t er_sina = sin(+er_lat * LE_D2R);
-
-    /* motion management - tilt rotation */
-    auto base_transformation = glm::rotate(glm::mat4(1), (float) - cl_view->vw_gam, glm::vec3(1.f, 0.f, 0.f));
-    /* motion management - altimetric translation */
-    base_transformation = glm::translate(base_transformation, glm::vec3(0.f, 0.f, - cl_view->vw_alt + LE_ADDRESS_WGS_A));
-    /* motion management - azimuth rotation */
-    base_transformation = glm::rotate(base_transformation, (float) + cl_view->vw_azm, glm::vec3(0.f, 0.f, 1.f));
 
     uint32_t point_id = 0;
     for (uint32_t cell_id = 0; cell_id < cl_model->md_size; ++cell_id) {
         auto cell = cl_model->md_cell + cell_id;
         auto base = le_array_get_byte(&cell->ce_data);
 
-        le_real_t er_trans[3] = {
-                cell->ce_edge[0] * er_cosl + cell->ce_edge[2] * er_sinl,
-                cell->ce_edge[0] * er_sinl - cell->ce_edge[2] * er_cosl,
-        };
-        // compute cell translation
-        er_trans[2] = cell->ce_edge[1] * er_sina - er_trans[1] * er_cosa;
-        er_trans[1] = cell->ce_edge[1] * er_cosa + er_trans[1] * er_sina;
-
-        // cell translation
-        auto transformation = glm::translate(
-                base_transformation,
-                glm::vec3(er_trans[0], er_trans[1], er_trans[2] - LE_ADDRESS_WGS_A)
-        );
-
-        // cell rotation - planimetric rotation
-        transformation = glm::rotate(transformation, er_lat, glm::vec3{1.f, 0.f, 0.f});
-        transformation = glm::rotate(transformation, -er_lon, glm::vec3{0.f, 1.f, 0.f});
-        dt_transformations.push_back(transformation);
-
+        // @TODO @OPTIM find a way to avoid copying vertices data and use directly models' stack mem to push onto gpu (need to memcpy with strided data)
         // iterate over data in the cell
         for (le_size_t i = 0; i < er_cell_get_record(&*cell); ++i) {
             // main pointer on the vertex, and points directly to the vertex coordinates
-            le_real_t *p_data = reinterpret_cast<le_real_t *>(base);
+            auto *p_data = reinterpret_cast<double *>(base);
 
             // points to the color values
             le_byte_t *c_data = base + LE_ARRAY_DATA_POSE + LE_ARRAY_DATA_TYPE;
 
             // gather vertex data
-            auto pos = glm::vec3(p_data[0], p_data[1], p_data[2]);
+            auto pos = glm::vec3(p_data[2], p_data[0], p_data[1]);
             auto color = glm::vec3(c_data[0], c_data[1], c_data[2]) / 255.f; // color representation from 8bit integer to [0,1] float
-            dt_vertices.push_back(Vertex{pos, color, cell_id});
+
+            // copy vertex to another data structure
+            dt_vertices.push_back(Vertex{pos, color});
             dt_points.push_back(point_id++);
-            // @TODO: parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
+            // @TODO @FEATURE parse cell->ce_type[1] and [2] to construct lines and triangles instead of points
 
             base += LE_ARRAY_DATA;
         }
     }
 
-    cl_displayed_state.transformations_size = dt_transformations.size();
 }
 
 void VideoEngine::bind_data() {
@@ -394,7 +380,7 @@ void VideoEngine::create_attachments() {
 }
 
 void VideoEngine::create_render_pass() {
-    std::array<VkAttachmentDescription, 2> attchmentDescriptions = {
+    std::array<VkAttachmentDescription, 2> attachmentDescriptions = {
         // Color attachment
         VkAttachmentDescription {
             .format = vk_color_format,
@@ -450,8 +436,8 @@ void VideoEngine::create_render_pass() {
     };
     VkRenderPassCreateInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = static_cast<uint32_t>(attchmentDescriptions.size()),
-        .pAttachments = attchmentDescriptions.data(),
+        .attachmentCount = static_cast<uint32_t>(attachmentDescriptions.size()),
+        .pAttachments = attachmentDescriptions.data(),
         .subpassCount = 1,
         .pSubpasses = &subpassDescription,
         .dependencyCount = static_cast<uint32_t>(dependencies.size()),
@@ -465,8 +451,8 @@ void VideoEngine::create_render_pass() {
         .renderPass = vk_render_pass,
         .attachmentCount = 2,
         .pAttachments = attachments,
-        .width = WIDTH,
-        .height = HEIGHT,
+        .width = cl_width,
+        .height = cl_height,
         .layers = 1,
     };
     TEST_VK_ASSERT(vkCreateFramebuffer(vk_device, &framebufferCreateInfo, nullptr, &vk_framebuffer), "error while creating framebuffer");
@@ -481,13 +467,7 @@ void VideoEngine::create_pipeline() {
                     .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
                     .pImmutableSamplers = nullptr,
             },
-            {
-                    .binding = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                    .descriptorCount = 1,
-                    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-                    .pImmutableSamplers = nullptr,
-            }};
+    };
     VkDescriptorSetLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .bindingCount = static_cast<uint32_t>(layoutBindings.size()),
@@ -645,7 +625,7 @@ void VideoEngine::create_command_buffers() {
         .framebuffer = vk_framebuffer,
         .renderArea = {
             .offset = {0, 0},
-            .extent = {WIDTH, HEIGHT},},
+            .extent = {cl_width, cl_height},},
         .clearValueCount = static_cast<uint32_t>(clearValues.size()),
         .pClearValues = clearValues.data(),
     };
@@ -655,13 +635,13 @@ void VideoEngine::create_command_buffers() {
     vkCmdBeginRenderPass(vk_draw_command_buffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport = {
-        .width = (float) WIDTH,
-        .height = (float) HEIGHT,
+        .width = (float) cl_width,
+        .height = (float) cl_height,
         .minDepth = (float)0.0f,
         .maxDepth = (float)1.0f,
     };
     vkCmdSetViewport(vk_draw_command_buffer, 0, 1, &viewport);
-    VkRect2D scissor = {.extent = {WIDTH, HEIGHT},};
+    VkRect2D scissor = {.extent = {cl_width, cl_height},};
 
     if (!dt_vertices.empty()) {
         vkCmdSetScissor(vk_draw_command_buffer, 0, 1, &scissor);
@@ -695,10 +675,6 @@ void VideoEngine::create_descriptor_set() {
                     .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                     .descriptorCount = 1,
             },
-            {
-                    .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                    .descriptorCount = 1,
-            }
     };
     VkDescriptorPoolCreateInfo poolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -716,25 +692,16 @@ void VideoEngine::create_descriptor_set() {
     };
     TEST_VK_ASSERT(vkAllocateDescriptorSets(vk_device, &allocInfo, &vk_descriptor_set), "failed to allocate descriptor sets!");
 
-    VkDeviceSize uniformBufferSize = sizeof(ViewProjBuffer);
-    VkDeviceSize storageBufferSize = sizeof(ModelsBuffer);
+    VkDeviceSize uniformBufferSize = sizeof(MatrixBuffer);
 
     create_buffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                   &vk_uniform_buffer, uniformBufferSize);
-    create_buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                  &vk_storage_buffer, storageBufferSize);
 
     VkDescriptorBufferInfo uniformBufferInfo = {
             .buffer = vk_uniform_buffer.buf,
             .offset = 0,
             .range = uniformBufferSize,
-    };
-    VkDescriptorBufferInfo storageBufferInfo = {
-            .buffer = vk_storage_buffer.buf,
-            .offset = 0,
-            .range = storageBufferSize,
     };
 
     std::vector<VkWriteDescriptorSet> descriptorWrites = {
@@ -747,15 +714,7 @@ void VideoEngine::create_descriptor_set() {
                     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                     .pBufferInfo = &uniformBufferInfo,
             },
-            {
-                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                    .dstSet = vk_descriptor_set,
-                    .dstBinding = 1,
-                    .dstArrayElement = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                    .pBufferInfo = &storageBufferInfo,
-            }};
+    };
 
     vkUpdateDescriptorSets(vk_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
@@ -766,83 +725,65 @@ void VideoEngine::create_descriptor_set() {
 /* --------- Vulkan rendering methods --------- */
 
 void VideoEngine::update_uniform_buffers() {
-    auto altitude = er_view_get_alt(&*cl_view);
-    auto gamma = er_view_get_gam(&*cl_view);
-    auto scale = er_geodesy_scale(altitude);
+    // the eye vector corresponds to the camera position in the world space, which needs to be converted into cartesian
+    // coordinates to compute the view transformation matrix (conversion between WGS -> cartesian system)
+    // https://stackoverflow.com/a/1185413/2981017
+    double lat = cl_view->vw_lat * LE_D2R;
+    double lon = cl_view->vw_lon * LE_D2R;
+    double cos_lat = cos(lat);
+    auto eye = glm::vec3(
+            cos_lat * cos(lon), // x = R * cos(lat) * cos(lon)
+            cos_lat * sin(lon), // y = R * cos(lat) * sin(lon)
+            sin(lat)                 // z = R * sin(lat)
+            ) * (float) cl_view->vw_alt;
 
+    // @TODO @FEATURE take into account the view angle of the view object (instead of defining the center point, calculate a forward vector using the angles)
+    // https://learnopengl.com/Getting-started/Camera
+    // look at the center of earth
     auto center = glm::vec3(0, 0, 0);
-
-    auto edge = glm::vec3(458302.736784, 4597902.204257, 4397020.105992);
-
-    le_real_t alt = altitude;
-    le_real_t lon = LE_D2R * er_view_get_lon(&*cl_view);
-    le_real_t lat = LE_D2R * er_view_get_lat(&*cl_view);
-    le_real_t er_optima = lon;
-    le_real_t er_optimb = lat;
-    lat = alt * sin(er_optimb) - edge[1];
-    alt = alt * cos(er_optimb);
-    lon = alt * sin(er_optima) - edge[0];
-    alt = alt * cos(er_optima) - edge[2];
-    auto eye = glm::vec3(lon, lat, alt);
     auto forward = glm::normalize(center-eye);
-    auto right = -glm::cross(glm::vec3(0, 0, 1), forward);
+    auto right = glm::cross(glm::vec3(0, 0, 1), forward);
     auto up = glm::cross(forward, right);
 
-//    std::cout << glm::to_string(eye) << std::endl;
+    float zNear = 0.01f;
+    float zFar = cl_view->vw_alt;
 
-    float zNear = 0.1f;
-    float zFar = 2*altitude - LE_ADDRESS_WGS_A;
-
+    auto model = glm::mat4(1); // for now we don't need to modify the earth model (translation, rotation, scaling)
     auto view = glm::lookAt(eye, center, up);
-
     auto projection = glm::perspective(
-            glm::radians(45.0f),
-            WIDTH / (float) HEIGHT,
+            glm::radians(30.0f),
+            cl_width / (float) cl_height,
             zNear,
             zFar
     );
 
     /* GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted, this is
     a compensation to render the image in the correct orientation */
-//    projection[0][0] *= -1;
+    projection[0][0] *= -1;
 
-///*
+    MatrixBuffer mvp_buffer = {model, view, projection};
+    void *vp_data;
+    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(mvp_buffer), 0, &vp_data), "error while mapping transformation buffer memory");
+    memcpy(vp_data, &mvp_buffer, sizeof(mvp_buffer));
+    vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
+
+    /*
+    // debug print
     if (! dt_vertices.empty()) {
         for (auto v: dt_vertices) {
             auto v4 = glm::vec4(v.pos, 1.f);
-            auto res = projection * view * dt_transformations[0] * v4;
+            auto res = projection * view * model * v4;
             auto simp = glm::vec3(res[0]/res[3], res[1]/res[3], res[2]/res[3]);
-            std::cout << "[" << v.cell_id << "] -> " << glm::to_string(v4)
-                      << " --> " << glm::to_string(dt_transformations[0] * v4)
-                      << " --> " << glm::to_string(view * dt_transformations[0] * v4)
-                      << " --> " << glm::to_string(res)
+            std::cout << glm::to_string(v4)
+                      << " CAMERA : " << glm::to_string(eye)
+                      << " dist = " << glm::distance(v.pos, eye)
+//                      << " --> " << glm::to_string(model * v4)
+//                      << " --> " << glm::to_string(view * model * v4)
+//                      << " --> " << glm::to_string(res)
                       << " --> " << glm::to_string(simp) << std::endl;
         }
     }
 //*/
-    // @TODO update if necessary
-    ViewProjBuffer vp_buffer = {
-            .view = view,
-            .proj = projection,
-    };
-    void *vp_data;
-    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_uniform_buffer.mem, 0, sizeof(vp_buffer), 0, &vp_data), "error while mapping transformation buffer memory");
-    memcpy(vp_data, &vp_buffer, sizeof(vp_buffer));
-    vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
-
-    // @TODO update if necessary
-    ModelsBuffer m_buffer = {
-            .model_count = static_cast<uint32_t>(dt_transformations.size()),
-            .models = {}
-    };
-    for (int i = 0; i < dt_transformations.size(); ++i) {
-        m_buffer.models[i] = dt_transformations[i];
-    }
-
-    void *models_data;
-    TEST_VK_ASSERT(vkMapMemory(vk_device, vk_storage_buffer.mem, 0, sizeof(m_buffer), 0, &models_data), "error while mapping transformation buffer memory");
-    memcpy(models_data, &m_buffer, sizeof(m_buffer));
-    vkUnmapMemory(vk_device, vk_storage_buffer.mem);
 }
 
 void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
@@ -868,8 +809,8 @@ void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresource
                     .layerCount = 1,
             },
             .extent = {
-                    .width = WIDTH,
-                    .height = HEIGHT,
+                    .width = cl_width,
+                    .height = cl_height,
                     .depth = 1,
             }
     };
@@ -1020,8 +961,8 @@ inline void VideoEngine::create_attachment(Attachment &att, VkImageUsageFlags im
             .imageType = VK_IMAGE_TYPE_2D,
             .format = format,
             .extent = {
-                    .width = WIDTH,
-                    .height = HEIGHT,
+                    .width = cl_width,
+                    .height = cl_height,
                     .depth = 1,},
             .mipLevels = 1,
             .arrayLayers = 1,
@@ -1073,6 +1014,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VideoEngine::debug_callback(VkDebugReportFlagsEXT
                                                            uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
     fprintf(stderr, "[VALIDATION]: %s - %s\n", pLayerPrefix, pMessage);
     return VK_FALSE;
+}
+
+uint32_t VideoEngine::get_width() const {
+    return cl_width;
+}
+
+uint32_t VideoEngine::get_height() const {
+    return cl_height;
 }
 
 /* ----------- End of helper methods ----------- */

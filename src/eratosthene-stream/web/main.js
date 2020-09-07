@@ -1,5 +1,10 @@
 // js-hacky way to use enum
 // @TODO @OPTIM to handle lighter messages, this could be changed to a single int with a flag system
+
+const request_events = {
+    CANVAS_SIZE: "canvas_size",
+    CLIENT_EVENT: "client_event",
+}
 const client_events = {
     WHEEL_UP: "wheel_up",
     WHEEL_DOWN: "wheel_down",
@@ -23,14 +28,20 @@ document.addEventListener('pointerlockchange', pointerLockChange, false);
 document.addEventListener('mozpointerlockchange', pointerLockChange, false);
 document.addEventListener('webkitpointerlockchange', pointerLockChange, false);
 
+let canvas = document.getElementById("canvas_stream");
+let canvas_container = document.getElementById("canvas_container");
+canvas.width = canvas_container.clientWidth;
+canvas.height = canvas_container.clientHeight;
+console.log("Canvas size " + canvas.width + "x" + canvas.height);
+
 
 let connect = function() {
-    document.getElementById("connectButton").disabled = true;
-    let port = document.getElementById("portInput").value;
+    document.getElementById("connect_button").disabled = true;
+    let port = document.getElementById("port_input").value;
     let address = "ws://127.0.0.1:" + port.toString() + "/stream";
     let socket = new WebSocket(address);
     let factor = 0.5;
-    let canvas = document.getElementById("canvas_stream");
+
 
     // compatibility to request pointer lock on canvas
     // https://developer.mozilla.org/fr/docs/WebAPI/Pointer_Lock
@@ -55,6 +66,12 @@ let connect = function() {
         var self = this;
         console.log("Connection opened");
 
+        socket.send(JSON.stringify({
+                request: request_events.CANVAS_SIZE,
+                width: canvas.width,
+                height: canvas.height,
+        }));
+
         this.onmessage = function(event) {
             // @TODO @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
             // @TODO check that the received message contains an image before updating
@@ -64,6 +81,7 @@ let connect = function() {
         // callback to send inputs to the streaming server
         let interaction_callback = function(event, modifiers = [], data = {}) {
             let payload = {
+                request: request_events.CLIENT_EVENT,
                 client_event: event,
                 client_event_mods: modifiers,
                 client_event_data: data,
