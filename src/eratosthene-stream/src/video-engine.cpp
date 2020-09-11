@@ -133,12 +133,6 @@ void VideoEngine::create_phys_device() {
     TEST_ASSERT(vk_phys_device != VK_NULL_HANDLE, "Failed to find a suitable GPU!");
 }
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
-    std::cerr << pCallbackData->pMessage << std::endl;
-
-    return VK_FALSE;
-}
-
 void VideoEngine::setup_debugger() {
     VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT,
@@ -217,38 +211,42 @@ void VideoEngine::create_command_pool() {
 
 void VideoEngine::update_internal_data() {
     // @TODO @OPTIM refresh internal data whenever there is a change in the model
-//    mx_draw.lock();
+    mx_draw.lock();
+    size_t count = dt_vertices.size();
     fill_data();
-    bind_data();
-    create_pipeline();
-    create_command_buffers();
-//    mx_draw.unlock();
+    if (count != dt_vertices.size()) {
+        bind_data();
+        create_pipeline();
+        create_command_buffers();
+    }
+    mx_draw.unlock();
 }
 
 void VideoEngine::set_size(uint32_t width, uint32_t height) {
     mx_draw.lock();
-    mx_copy.lock();
     mx_bind.lock();
-    std::cout << "Changing screen size to " << width << "x" << height << std::endl;
+    mx_copy.lock();
 
     this->cl_width = width;
     this->cl_height = height;
     er_imagedata_size = sizeof(uint8_t) * 4 * cl_width * cl_height;
 
-    create_attachments();
-    create_render_pass();
-    create_pipeline();
-    create_descriptor_set();
-    create_command_buffers();
+    recreate_chain();
 
+    mx_draw.unlock();
     mx_bind.unlock();
     mx_copy.unlock();
-    mx_draw.unlock();
 }
 
 void VideoEngine::fill_data() {
-    // Temporarily reclean all the time data to be display
-    // @TODO @OPTIM only remove data that is not anymore shown and only add fresh data
+    // check that there is new data to be displayed (vertices count is an overall good estimate to know if vertices are already stored)
+    size_t model_vert_count = 0;
+    for (size_t i = 0; i < cl_model->md_size; i++) {
+        auto cell = cl_model->md_cell + i;
+        model_vert_count += er_cell_get_record(cell);
+    }
+    if (dt_vertices.size() == model_vert_count) return;
+
     dt_vertices.clear();
     dt_points.clear();
     dt_lines.clear();
@@ -261,7 +259,7 @@ void VideoEngine::fill_data() {
 
         // @TODO @OPTIM find a way to avoid copying vertices data and use directly models' stack mem to push onto gpu (need to memcpy with strided data)
         // iterate over data in the cell
-        for (le_size_t i = 0; i < er_cell_get_record(&*cell); ++i) {
+        for (le_size_t i = 0; i < er_cell_get_record(cell); ++i) {
             // main pointer on the vertex, and points directly to the vertex coordinates
             auto *p_data = reinterpret_cast<double *>(base);
 
@@ -280,10 +278,11 @@ void VideoEngine::fill_data() {
             base += LE_ARRAY_DATA;
         }
     }
-
+    cl_displayed_state.vertices_count = dt_vertices.size();
 }
 
 void VideoEngine::bind_data() {
+    std::cout << "Binding" << std::endl;
     BufferWrap stagingWrap;
     VkDeviceSize vertexBufferSize = dt_vertices.size() * sizeof(Vertex);
     VkDeviceSize triangleBufferSize = dt_triangles.size() * sizeof(uint32_t);
@@ -719,6 +718,43 @@ void VideoEngine::create_descriptor_set() {
     vkUpdateDescriptorSets(vk_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
+void VideoEngine::recreate_chain() {
+    vkDeviceWaitIdle(vk_device);
+
+    cleanup_chain();
+
+    create_attachments();
+    create_render_pass();
+    create_pipeline();
+    create_descriptor_set();
+    create_command_buffers();
+}
+
+void VideoEngine::cleanup_chain() {
+    vkDestroyImageView(vk_device, vk_depth_attachment.view, nullptr);
+    vkDestroyImage(vk_device, vk_depth_attachment.img, nullptr);
+    vkFreeMemory(vk_device, vk_depth_attachment.mem, nullptr);
+
+    vkDestroyFramebuffer(vk_device, vk_framebuffer, nullptr);
+
+    vkFreeCommandBuffers(vk_device, vk_binding_command_pool, 1, &vk_binding_command_buffer);
+    vkFreeCommandBuffers(vk_device, vk_graphics_command_pool, 1, &vk_draw_command_buffer);
+    vkFreeCommandBuffers(vk_device, vk_transfer_command_pool, 1, &vk_binding_command_buffer);
+
+    vkDestroyPipeline(vk_device, vk_pipeline_points, nullptr);
+    vkDestroyPipeline(vk_device, vk_pipeline_lines, nullptr);
+    vkDestroyPipeline(vk_device, vk_pipeline_triangles, nullptr);
+    vkDestroyPipelineLayout(vk_device, vk_pipeline_layout, nullptr);
+    vkDestroyRenderPass(vk_device, vk_render_pass, nullptr);
+
+    vkDestroyImageView(vk_device, vk_color_attachment.view, nullptr);
+
+    vkDestroyBuffer(vk_device, vk_uniform_buffer.buf, nullptr);
+    vkFreeMemory(vk_device, vk_uniform_buffer.mem, nullptr);
+
+    vkDestroyDescriptorPool(vk_device, vk_descriptor_pool, nullptr);
+}
+
 /* -------- End of vulkan setup methods ------- */
 
 
@@ -742,6 +778,8 @@ void VideoEngine::update_uniform_buffers() {
     // look at the center of earth
     auto center = glm::vec3(0, 0, 0);
     auto forward = glm::normalize(center-eye);
+    forward = glm::rotate(glm::mat4(1), (float) cl_view->vw_azm, glm::vec3(0.0, 0.0, 1.0)) * glm::vec4(forward, 1.0);
+
     auto right = glm::cross(glm::vec3(0, 0, 1), forward);
     auto up = glm::cross(forward, right);
 
@@ -767,37 +805,21 @@ void VideoEngine::update_uniform_buffers() {
     memcpy(vp_data, &mvp_buffer, sizeof(mvp_buffer));
     vkUnmapMemory(vk_device, vk_uniform_buffer.mem);
 
-    /*
-    // debug print
-    if (! dt_vertices.empty()) {
-        for (auto v: dt_vertices) {
-            auto v4 = glm::vec4(v.pos, 1.f);
-            auto res = projection * view * model * v4;
-            auto simp = glm::vec3(res[0]/res[3], res[1]/res[3], res[2]/res[3]);
-            std::cout << glm::to_string(v4)
-                      << " CAMERA : " << glm::to_string(eye)
-                      << " dist = " << glm::distance(v.pos, eye)
-//                      << " --> " << glm::to_string(model * v4)
-//                      << " --> " << glm::to_string(view * model * v4)
-//                      << " --> " << glm::to_string(res)
-                      << " --> " << glm::to_string(simp) << std::endl;
-        }
-    }
-//*/
 }
 
 void VideoEngine::draw_frame(char* imagedata, VkSubresourceLayout subresourceLayout) {
-    mx_draw.lock();
-    // @TODO: only update storage buffer if data has been updated
-    update_uniform_buffers();
+    mx_draw.lock_shared();
+    if (!er_view_get_equal(&*this->cl_view, &cl_displayed_state.previous_view)) {
+        cl_displayed_state.previous_view = *cl_view;
+        update_uniform_buffers();
+    }
     submit_work(vk_draw_command_buffer, vk_graphics_queue);
-    mx_draw.unlock();
-    vkDeviceWaitIdle(vk_device);
+    mx_draw.unlock_shared();
     output_result(imagedata, subresourceLayout);
 }
 
 void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresourceLayout) {
-    mx_copy.lock();
+    mx_copy.lock_shared();
     VkCommandBufferBeginInfo cmdBufInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     VkImageCopy imageCopyRegion = {
             .srcSubresource = {
@@ -849,7 +871,7 @@ void VideoEngine::output_result(char* imagedata, VkSubresourceLayout subresource
     vkMapMemory(vk_device, vk_copy_attachment.mem, 0, er_imagedata_size, 0, (void**)&tmpdata);
     memcpy(imagedata, tmpdata, er_imagedata_size);
     vkUnmapMemory(vk_device, vk_copy_attachment.mem);
-    mx_copy.unlock();
+    mx_copy.unlock_shared();
 }
 
 /* ----- End of vulkan rendering methods ------ */
@@ -887,8 +909,10 @@ inline uint32_t VideoEngine::get_memtype_index(uint32_t typeBits, VkMemoryProper
 }
 
 inline void VideoEngine::delete_buffer(BufferWrap *wrap) {
-    if (wrap->is_allocated)
+    if (wrap->is_allocated) {
         vkDestroyBuffer(vk_device, wrap->buf, nullptr);
+        vkFreeMemory(vk_device, wrap->mem, nullptr);
+    }
 
     wrap->is_allocated = false;
 }

@@ -115,6 +115,9 @@ void VideoClient::handle_message(const ix::WebSocketMessagePtr &msg,
                                 /* update view direction */
                                 er_view_set_azm(&*cl_view, -dx);
                                 er_view_set_gam(&*cl_view, +dy);
+
+//                                std::cout << "New azimuth : " << cl_view->vw_azm << std::endl;
+//                                std::cout << "New gamma : " << cl_view->vw_gam << std::endl;
                                 break;
 
                             default:

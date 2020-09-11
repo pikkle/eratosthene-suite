@@ -7,7 +7,7 @@
 #include <eratosthene-client-model.h>
 #include <eratosthene-client-view.h>
 #include <memory>
-#include <mutex>
+#include <shared_mutex>
 #include <thread>
 
 #include "models.h"
@@ -23,6 +23,8 @@ const float FPS = 60.f; // @TODO: adapt the frames rendered based on target FPS
 
 struct ViewState {
     bool running;
+    unsigned long vertices_count;
+    er_view_t previous_view = ER_VIEW_C;
 };
 
 class VideoEngine {
@@ -38,7 +40,6 @@ public:
     void set_size(uint32_t width, uint32_t height);
 
     uint32_t get_width() const;
-
     uint32_t get_height() const;
 
 private:
@@ -82,9 +83,9 @@ private:
     VkCommandBuffer vk_copy_command_buffer;
     VkCommandBuffer vk_binding_command_buffer;
 
-    std::mutex mx_draw;
-    std::mutex mx_copy;
-    std::mutex mx_bind;
+    std::shared_mutex mx_draw;
+    std::shared_mutex mx_copy;
+    std::shared_mutex mx_bind;
 
     VkFormat vk_color_format = VK_FORMAT_R8G8B8A8_UNORM;
     VkFormat vk_depth_format;
@@ -128,6 +129,8 @@ private:
     void create_render_pass();
     void create_command_buffers();
 
+    void recreate_chain();
+
     void output_result(char *imagedata, VkSubresourceLayout subresourceLayout);
 
     /* Helper methods */
@@ -142,6 +145,7 @@ private:
     static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
                                                          uint64_t object, size_t location, int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData);
     /* End of Helper methods */
+    void cleanup_chain();
 };
 
 #endif
