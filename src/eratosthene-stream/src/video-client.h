@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <thread>
 
+#include <nlohmann/json.hpp>
+
 #include <IXWebSocket/ixwebsocket/IXWebSocket.h>
 #include <IXWebSocket/ixwebsocket/IXWebSocketMessage.h>
 #include <IXWebSocket/ixwebsocket/IXConnectionState.h>
@@ -11,6 +13,29 @@
 #include "video-engine.h"
 #include "data-client.h"
 #include "video-streamer.h"
+
+
+/**
+ * List all possible request types from websocket client
+ */
+enum RequestType {
+    RT_UNDEFINED,
+    RT_CANVAS_SIZE, // request to resize the rendered frame
+    RT_CLIENT_EVENT, // request to handle a user input (keyboard / mouse)
+};
+
+/**
+ * List all possible client events that can be received from websocket
+ */
+enum ClientEvent {
+    EV_UNDEFINED,
+    EV_WHEEL_UP,
+    EV_WHEEL_DOWN,
+    EV_LEFT_MOUSE_MOVEMENT,
+    EV_RIGHT_MOUSE_MOVEMENT,
+    EV_SPAN_INCREASE,
+    EV_SPAN_DECREASE,
+};
 
 /**
  * This class is responsible to subordinate all tasks to have a rendering engine available on the web.
@@ -55,6 +80,9 @@ public:
      * @param connectionState The websocket connection state
      */
     void handle_message(const ix::WebSocketMessagePtr &msg, std::shared_ptr<ix::ConnectionState> connectionState);
+
+    void handle_input(ClientEvent clientEvent, nlohmann::json mods, nlohmann::json data);
+
 private:
     VideoEngine *vc_video_engine; // The video engine responsible to handle the GPU rendering on the server machine
     DataClient *vc_data_client; // The data client responsible to fetch data from the data server
