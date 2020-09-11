@@ -23,15 +23,17 @@ ClientEvent resolveClientEvent(const std::string &e) {
     return EV_UNDEFINED;
 }
 
-VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port) {
+VideoClient::VideoClient(unsigned char * const data_server_ip, int data_server_port,
+                         double view_lat, double view_lon, int view_tia, int view_tib) {
     vc_data_client = new DataClient(data_server_ip, data_server_port);
     cl_model = vc_data_client->get_model();
     cl_view = std::make_shared<er_view_t>((er_view_t) ER_VIEW_D);
 
     // coordinates ~ above geneva
-    // @TODO: set position from command line arguments
-    cl_view->vw_lon = 6.126579;
-    cl_view->vw_lat = 46.2050282;
+    cl_view->vw_lat = view_lat;
+    cl_view->vw_lon = view_lon;
+    cl_view->vw_tia = view_tia;
+    cl_view->vw_tib = view_tib;
     cl_view->vw_spn = ER_COMMON_LSPAN;
 
     vc_video_engine = new VideoEngine(vc_data_client->get_model(), cl_view);
@@ -77,7 +79,7 @@ void VideoClient::handle_input(ClientEvent event, nlohmann::json mods, nlohmann:
             dy *= ER_COMMON_INR;
             /* update view direction */
             er_view_set_azm(&*cl_view, -dx);
-            er_view_set_gam(&*cl_view, +dy);
+//            er_view_set_gam(&*cl_view, +dy);
             break;
 
         case EV_SPAN_INCREASE:
@@ -152,54 +154,45 @@ void encode_callback(void *context, void *data, int size) {
 void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
                                std::shared_ptr<ix::ConnectionState> connectionState) {
     std::thread t([this, webSocket, connectionState]() {
-                      er_view_t prev_view = ER_VIEW_C;
-
                       while (!connectionState->isTerminated()) {
-                          // only draw new image if it has been modified since last draw
-                          if (!er_view_get_equal(&prev_view, &*cl_view) || cl_model->md_sync == _LE_FALSE) {
-                              if (cl_model->md_sync) {
-                                  prev_view = *cl_view;
-                              }
+                          // prepare memory for image
+                          char *outputImage = (char *) malloc(vc_video_engine->er_imagedata_size);
 
-                              // prepare memory for image
-                              char *outputImage = (char *) malloc(vc_video_engine->er_imagedata_size);
+                          // render the image and output it to memory
+                          VkSubresourceLayout layout;
+                          vc_video_engine->draw_frame(outputImage, layout);
 
-                              // render the image and output it to memory
-                              VkSubresourceLayout layout;
-                              vc_video_engine->draw_frame(outputImage, layout);
+                          // encode image for web
+                          std::vector<uint8_t> encodedData;
+                          stbi_write_jpg_to_func(encode_callback,
+                                                 reinterpret_cast<void *>(&encodedData),
+                                                 vc_video_engine->get_width(),
+                                                 vc_video_engine->get_height(),
+                                                 4, outputImage, 30);
+                          auto b64 = base64_encode(encodedData.data(), encodedData.size());
+                          auto result = b64.data();
 
-                              // encode image for web
-                              std::vector<uint8_t> encodedData;
-                              stbi_write_jpg_to_func(encode_callback,
-                                                     reinterpret_cast<void *>(&encodedData),
-                                                     vc_video_engine->get_width(),
-                                                     vc_video_engine->get_height(),
-                                                     4, outputImage, 50);
-                              auto b64 = base64_encode(encodedData.data(), encodedData.size());
-                              auto result = b64.data();
+                          nlohmann::json j;
+                          j["frame"] = result; // the rendered image
+                          j["view"] = { // additional data about the rendered image
+                                  {"lon", cl_view->vw_lon},
+                                  {"lat", cl_view->vw_lat},
+                                  {"alt", cl_view->vw_alt},
 
-                              nlohmann::json j;
-                              j["frame"] = result; // the rendered image
-                              j["view"] = { // additional data about the rendered image
-                                      {"lon", cl_view->vw_lon},
-                                      {"lat", cl_view->vw_lat},
-                                      {"alt", cl_view->vw_alt},
+                                  {"gam", cl_view->vw_gam},
+                                  {"azm", cl_view->vw_azm},
 
-                                      {"gam", cl_view->vw_gam},
-                                      {"azm", cl_view->vw_azm},
+                                  {"tia", cl_view->vw_tia},
+                                  {"tib", cl_view->vw_tib},
 
-                                      {"tia", cl_view->vw_tia},
-                                      {"tib", cl_view->vw_tib},
+                                  {"spn", cl_view->vw_spn}
+                          };
 
-                                      {"spn", cl_view->vw_spn}
-                              };
+                          // send image data to client
+                          webSocket->send(j.dump());
 
-                              // send image data to client
-                              webSocket->send(j.dump());
-
-                              // cleanup
-                              free(outputImage);
-                          }
+                          // cleanup
+                          free(outputImage);
                       }
                   }
     );
@@ -208,8 +201,8 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
 
 void VideoClient::loops_update(std::shared_ptr<ix::ConnectionState> connectionState, le_size_t delay) {
     std::thread t([this, delay, connectionState]() {
-        while (!connectionState->isTerminated()) {
-            while (vc_data_client->update_model(&*cl_view, delay));
+        while (true) {
+            while (!connectionState->isTerminated() && vc_data_client->update_model(&*cl_view, delay));
         }
     });
     t.detach();

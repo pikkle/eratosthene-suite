@@ -14,6 +14,10 @@
 #include "data-client.h"
 #include "video-streamer.h"
 
+const double DEFAULT_LON = 6.126579;
+const double DEFAULT_LAT = 46.2050282;
+const int DEFAULT_TIA = 1117584000;
+const int DEFAULT_TIB = 1117584000;
 
 /**
  * List all possible request types from websocket client
@@ -50,7 +54,8 @@ public:
      * Constructor of a video client. Initiate an instance of vulkan engine, a data client that connects to the data
      * server and (in the @FUTURE) a video stream server to send image frames through the network
      */
-    VideoClient(unsigned char * const data_server_ip, int data_server_port);
+    VideoClient(unsigned char * const data_server_ip, int data_server_port,
+                double lat = DEFAULT_LAT, double lon = DEFAULT_LON, int tia = DEFAULT_TIA, int tib = DEFAULT_TIB);
 
     /**
      * Destructor of video client. Release the GPU from an engine, closes the data socket and (in the @FUTURE) closes

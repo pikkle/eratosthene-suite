@@ -63,14 +63,31 @@ VideoEngine::VideoEngine(std::shared_ptr<er_model_t> model, std::shared_ptr<er_v
 }
 
 VideoEngine::~VideoEngine() {
-    // @TODO: free up all vulkan objects
     std::cerr << "Freeing up a engine instance..." << std::endl;
     cl_displayed_state.running = false;
-    vkFreeCommandBuffers(vk_device, vk_graphics_command_pool, 1, &vk_draw_command_buffer);
-    vkFreeCommandBuffers(vk_device, vk_transfer_command_pool, 1, &vk_copy_command_buffer);
+    cleanup_chain();
+
+    mx_draw.lock();
+    mx_copy.lock();
+    mx_bind.lock();
+    vkDeviceWaitIdle(vk_device);
+
     vkDestroyCommandPool(vk_device, vk_graphics_command_pool, nullptr);
     vkDestroyCommandPool(vk_device, vk_transfer_command_pool, nullptr);
     vkDestroyCommandPool(vk_device, vk_binding_command_pool, nullptr);
+
+    vkDestroyDescriptorSetLayout(vk_device, vk_descriptor_set_layout, nullptr);
+
+    vkDestroyBuffer(vk_device, vk_points_buffer.buf, nullptr);
+    vkFreeMemory(vk_device, vk_points_buffer.mem, nullptr);
+    vkDestroyBuffer(vk_device, vk_lines_buffer.buf, nullptr);
+    vkFreeMemory(vk_device, vk_lines_buffer.mem, nullptr);
+    vkDestroyBuffer(vk_device, vk_triangles_buffer.buf, nullptr);
+    vkFreeMemory(vk_device, vk_triangles_buffer.mem, nullptr);
+    vkDestroyBuffer(vk_device, vk_vertices_buffer.buf, nullptr);
+    vkFreeMemory(vk_device, vk_vertices_buffer.mem, nullptr);
+
+//    vkDestroyDevice(vk_device, nullptr);
 }
 
 void VideoEngine::create_instance() {
@@ -210,7 +227,6 @@ void VideoEngine::create_command_pool() {
 }
 
 void VideoEngine::update_internal_data() {
-    // @TODO @OPTIM refresh internal data whenever there is a change in the model
     mx_draw.lock();
     size_t count = dt_vertices.size();
     fill_data();
@@ -480,9 +496,6 @@ void VideoEngine::create_pipeline() {
     };
     TEST_VK_ASSERT(vkCreatePipelineLayout(vk_device, &pipelineLayoutCreateInfo, nullptr, &vk_pipeline_layout), "error while creating pipeline layout");
 
-    VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
-    TEST_VK_ASSERT(vkCreatePipelineCache(vk_device, &pipelineCacheCreateInfo, nullptr, &vk_pipeline_cache), "error while creating pipeline cache");
-
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .flags = 0,
@@ -579,17 +592,17 @@ void VideoEngine::create_pipeline() {
 
     if (!dt_triangles.empty()) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, vk_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr,
                                                  &vk_pipeline_triangles), "error while creating triangles pipeline");
     }
     if (!dt_lines.empty()) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, vk_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr,
                                                  &vk_pipeline_lines), "error while creating lines pipeline");
     }
     if (!dt_points.empty()) {
         inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, vk_pipeline_cache, 1, &pipelineCreateInfo, nullptr,
+        TEST_VK_ASSERT(vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr,
                                                  &vk_pipeline_points), "error while creating points pipeline");
     }
 
@@ -733,20 +746,28 @@ void VideoEngine::cleanup_chain() {
     vkDestroyImageView(vk_device, vk_depth_attachment.view, nullptr);
     vkDestroyImage(vk_device, vk_depth_attachment.img, nullptr);
     vkFreeMemory(vk_device, vk_depth_attachment.mem, nullptr);
+    vkDestroyImageView(vk_device, vk_color_attachment.view, nullptr);
+    vkDestroyImage(vk_device, vk_color_attachment.img, nullptr);
+    vkFreeMemory(vk_device, vk_color_attachment.mem, nullptr);
+    vkDestroyImageView(vk_device, vk_copy_attachment.view, nullptr);
+    vkDestroyImage(vk_device, vk_copy_attachment.img, nullptr);
+    vkFreeMemory(vk_device, vk_copy_attachment.mem, nullptr);
 
     vkDestroyFramebuffer(vk_device, vk_framebuffer, nullptr);
 
     vkFreeCommandBuffers(vk_device, vk_binding_command_pool, 1, &vk_binding_command_buffer);
     vkFreeCommandBuffers(vk_device, vk_graphics_command_pool, 1, &vk_draw_command_buffer);
-    vkFreeCommandBuffers(vk_device, vk_transfer_command_pool, 1, &vk_binding_command_buffer);
+    vkFreeCommandBuffers(vk_device, vk_transfer_command_pool, 1, &vk_copy_command_buffer);
 
-    vkDestroyPipeline(vk_device, vk_pipeline_points, nullptr);
-    vkDestroyPipeline(vk_device, vk_pipeline_lines, nullptr);
-    vkDestroyPipeline(vk_device, vk_pipeline_triangles, nullptr);
+    if (! dt_points.empty())
+        vkDestroyPipeline(vk_device, vk_pipeline_points, nullptr);
+    if (! dt_lines.empty())
+        vkDestroyPipeline(vk_device, vk_pipeline_lines, nullptr);
+    if (! dt_triangles.empty())
+        vkDestroyPipeline(vk_device, vk_pipeline_triangles, nullptr);
+
     vkDestroyPipelineLayout(vk_device, vk_pipeline_layout, nullptr);
     vkDestroyRenderPass(vk_device, vk_render_pass, nullptr);
-
-    vkDestroyImageView(vk_device, vk_color_attachment.view, nullptr);
 
     vkDestroyBuffer(vk_device, vk_uniform_buffer.buf, nullptr);
     vkFreeMemory(vk_device, vk_uniform_buffer.mem, nullptr);
@@ -777,16 +798,18 @@ void VideoEngine::update_uniform_buffers() {
     // look at the center of earth
     auto center = glm::vec3(0, 0, 0);
     auto forward = glm::normalize(center-eye);
-    forward = glm::rotate(glm::mat4(1), (float) cl_view->vw_azm, glm::vec3(0.0, 0.0, 1.0)) * glm::vec4(forward, 1.0);
-
     auto right = glm::cross(glm::vec3(0, 0, 1), forward);
     auto up = glm::cross(forward, right);
+
+    auto yaw_rotation = glm::rotate(glm::mat4(1), (float) cl_view->vw_azm, forward);
+    right = glm::vec3(yaw_rotation * glm::vec4(right, 0.0));
+    up = glm::vec3(yaw_rotation * glm::vec4(up, 0.0));
 
     float zNear = 0.01f;
     float zFar = cl_view->vw_alt;
 
     auto model = glm::mat4(1); // for now we don't need to modify the earth model (translation, rotation, scaling)
-    auto view = glm::lookAt(eye, center, up);
+    auto view = glm::lookAt(eye, eye+forward, up);
     auto projection = glm::perspective(
             glm::radians(30.0f),
             cl_width / (float) cl_height,

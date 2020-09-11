@@ -107,7 +107,6 @@ private:
     VkPipeline vk_pipeline_points;
 
     VkPipelineLayout vk_pipeline_layout;
-    VkPipelineCache vk_pipeline_cache;
 
     BufferWrap vk_vertices_buffer;
     BufferWrap vk_triangles_buffer;
