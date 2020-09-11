@@ -55,6 +55,10 @@
         if ( er_viewa->vw_lat != er_viewb->vw_lat ) return( _LE_FALSE );
         if ( er_viewa->vw_alt != er_viewb->vw_alt ) return( _LE_FALSE );
 
+        /* check rotation components - return answer */
+        if ( er_viewa->vw_gam != er_viewb->vw_gam ) return( _LE_FALSE );
+        if ( er_viewa->vw_azm != er_viewb->vw_azm ) return( _LE_FALSE );
+
         /* check temporal components - return answer */
         if ( er_viewa->vw_tia != er_viewb->vw_tia ) return( _LE_FALSE );
         if ( er_viewa->vw_tib != er_viewb->vw_tib ) return( _LE_FALSE );

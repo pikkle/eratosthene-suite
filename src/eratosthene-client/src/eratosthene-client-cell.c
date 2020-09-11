@@ -109,6 +109,8 @@
 
     }
 
+#ifndef ERATOSTHENE_STREAM
+
     le_void_t er_cell_get_render( er_cell_t * const er_cell, le_real_t const er_lon, le_real_t const er_lat, le_real_t const er_cosl, le_real_t const er_sinl, le_real_t const er_cosa, le_real_t const er_sina ) {
 
         /* buffer pointer variable */
@@ -196,6 +198,8 @@
         }
 
     }
+
+#endif
 
 /*
     source - mutator methods
@@ -291,10 +295,10 @@
             er_optimb = ( ( le_real_t * ) er_head )[1];
 
             /* coordinates conversion */
-            ( ( le_real_t * ) er_head )[1] = ( ( le_real_t * ) er_head )[2] * sin( er_optimb ) - er_cell->ce_edge[1];
+            ( ( le_real_t * ) er_head )[1] = ( ( le_real_t * ) er_head )[2] * sin( er_optimb );
             ( ( le_real_t * ) er_head )[2] = ( ( le_real_t * ) er_head )[2] * cos( er_optimb );
-            ( ( le_real_t * ) er_head )[0] = ( ( le_real_t * ) er_head )[2] * sin( er_optima ) - er_cell->ce_edge[0];
-            ( ( le_real_t * ) er_head )[2] = ( ( le_real_t * ) er_head )[2] * cos( er_optima ) - er_cell->ce_edge[2];
+            ( ( le_real_t * ) er_head )[0] = ( ( le_real_t * ) er_head )[2] * sin( er_optima );
+            ( ( le_real_t * ) er_head )[2] = ( ( le_real_t * ) er_head )[2] * cos( er_optima );
 
             /* update primitive count */
             er_cell->ce_type[er_head[LE_ARRAY_DATA_POSE] - 1] ++;
