@@ -282,7 +282,6 @@ void VideoEngine::fill_data() {
 }
 
 void VideoEngine::bind_data() {
-    std::cout << "Binding" << std::endl;
     BufferWrap stagingWrap;
     VkDeviceSize vertexBufferSize = dt_vertices.size() * sizeof(Vertex);
     VkDeviceSize triangleBufferSize = dt_triangles.size() * sizeof(uint32_t);

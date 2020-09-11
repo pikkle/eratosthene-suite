@@ -12,15 +12,29 @@
             width: 100%;
             height: 100%;
         }
+
+        #connect_div {
+            margin-bottom: 10px;
+        }
+
+        #info_div span {
+            margin-left: 10px;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body style="color: white; background: #0a0a0a;">
 <div style="text-align: center">
     <h1>Eratosthene stream</h1>
-    <div style="margin-bottom: 10px;">
+    <div id="connect_div">
         Enter the server port number:
         <input id="port_input" type="number" value="8080"/>
         <button id="connect_button" onclick="connect()">Connect</button>
+    </div>
+    <div id="info_div">
+        <span>LAT : <span id="data_lat">0</span></span>
+        <span>LON : <span id="data_lon">0</span></span>
+        <span>ALT : <span id="data_alt">0</span></span>
     </div>
     <div id="canvas_container">
         <canvas id="canvas_stream"></canvas>

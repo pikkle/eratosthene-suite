@@ -175,8 +175,22 @@ void VideoClient::loops_render(std::shared_ptr<ix::WebSocket> webSocket,
                               auto b64 = base64_encode(encodedData.data(), encodedData.size());
                               auto result = b64.data();
 
+                              nlohmann::json j;
+                              j["frame"] = result;
+                              j["view"] = {
+                                      {"lon", cl_view->vw_lon},
+                                      {"lat", cl_view->vw_lat},
+                                      {"alt", cl_view->vw_alt},
+
+                                      {"gam", cl_view->vw_gam},
+                                      {"azm", cl_view->vw_azm},
+
+                                      {"tia", cl_view->vw_tia},
+                                      {"tib", cl_view->vw_tib},
+                              };
+
                               // send image data to client
-                              webSocket->send(result);
+                              webSocket->send(j.dump());
 
                               // cleanup
                               free(outputImage);

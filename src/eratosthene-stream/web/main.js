@@ -58,7 +58,7 @@ let connect = function() {
 
     socket.onerror = function(error) {
         console.error(error);
-        document.getElementById("connectButton").disabled = false;
+        document.getElementById("connect_button").disabled = false;
     }
 
     socket.onopen = function(event) {
@@ -75,7 +75,10 @@ let connect = function() {
         this.onmessage = function(event) {
             // @TODO @FUTURE probably retrieve the base64 image alongside other information (FPS, latency, ...) inside a json
             // @TODO check that the received message contains an image before updating
-            update_image(event.data);
+
+            let json = JSON.parse(event.data);
+            update_image(json.frame);
+            update_view_info(json.view);
         }
 
         // callback to send inputs to the streaming server
@@ -130,7 +133,7 @@ let connect = function() {
     }
 
     socket.onclose = function(event) {
-        document.getElementById("connectButton").disabled = false;
+        document.getElementById("connect_button").disabled = false;
     }
 
     let update_image = function(image_data) {
@@ -142,6 +145,12 @@ let connect = function() {
         i.src = "data:image/jpg;base64," + image_data;
         canvas.style.background = "url(" + i.src + ")";
         let image_elem = document.getElementById("frame");
+    }
+
+    let update_view_info = function(view_data) {
+        document.getElementById("data_lat").textContent = view_data.lat;
+        document.getElementById("data_lon").textContent = view_data.lon;
+        document.getElementById("data_alt").textContent = view_data.alt;
     }
 
 }
