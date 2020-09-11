@@ -1,8 +1,7 @@
 // js-hacky way to use enum
-// @TODO @OPTIM to handle lighter messages, this could be changed to a single int with a flag system
-
 const request_events = {
     CANVAS_SIZE: "canvas_size",
+    SET_VIEW: "set_view",
     CLIENT_EVENT: "client_event",
 }
 const client_events = {
@@ -16,6 +15,12 @@ const client_events = {
         LEFT_MOUSE: "mod_left_mouse",
     },
 };
+
+let DEFAULT_LON = 6.126579;
+let DEFAULT_LAT = 46.2050282;
+let DEFAULT_ALT = 6441918.37;
+let DEFAULT_TIA = 1117584000;
+let DEFAULT_TIB = 1117584000;
 
 document.pointerLockElement = document.pointerLockElement    ||
     document.mozPointerLockElement ||
@@ -36,6 +41,7 @@ canvas.width = canvas_container.clientWidth;
 canvas.height = canvas_container.clientHeight;
 console.log("Canvas size " + canvas.width + "x" + canvas.height);
 
+document.getElementById("reset_button").disabled = true;
 
 let connect = function() {
     document.getElementById("connect_button").disabled = true;
@@ -75,6 +81,27 @@ let connect = function() {
                 height: canvas.height,
             }
         }));
+
+        let set_viewpoint = function(lat = DEFAULT_LAT, lon = DEFAULT_LON,
+                                     alt = DEFAULT_ALT,
+                                     tia = DEFAULT_TIA, tib = DEFAULT_TIB) {
+            self.send(JSON.stringify({
+                request: request_events.SET_VIEW,
+                data: {
+                    view_lat: lat,
+                    view_lon: lon,
+                    view_alt: alt,
+                    view_tia: tia,
+                    view_tib: tib,
+                }
+            }));
+        }
+
+        // setup reset button to reset the position at start
+        document.getElementById("reset_button").disabled = false;
+        document.getElementById("reset_button").onclick = function() {
+            set_viewpoint();
+        };
 
         // handle received messages
         this.onmessage = function(event) {

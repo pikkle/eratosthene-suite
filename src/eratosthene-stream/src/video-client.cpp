@@ -7,6 +7,7 @@
 RequestType resolveRequestType(const std::string &e) {
     if (e == "canvas_size") return RT_CANVAS_SIZE;
     if (e == "client_event") return RT_CLIENT_EVENT;
+    if (e == "set_view") return RT_SET_VIEW;
     return RT_UNDEFINED;
 }
 
@@ -102,37 +103,56 @@ void VideoClient::handle_message(const ix::WebSocketMessagePtr &msg,
             auto j = nlohmann::json::parse(msg.get()->str.data());
 
             if (j.contains("request")) {
-                    RequestType requestType = resolveRequestType(j["request"]);
+                nlohmann::json data;
+                if (j.contains("data")) {
+                    data = j["data"];
+                }
 
-                    if (requestType == RT_UNDEFINED) {
-                        // Unresolvable request type error
-                        std::cerr << "Unrecognized request type : " << j["request"] << std::endl;
+                switch (resolveRequestType(j["request"])) {
+                    case RT_SET_VIEW:
+                        if (data.contains("view_lat") && data.contains("view_lon")
+                            && data.contains("view_alt")
+                            && data.contains("view_tia") && data.contains("view_tib")) {
+                            
+                            cl_view->vw_lat = data["view_lat"];
+                            cl_view->vw_lon = data["view_lon"];
+                            cl_view->vw_alt = data["view_alt"];
+                            cl_view->vw_tia = data["view_tia"];
+                            cl_view->vw_tib = data["view_tib"];
+                        }
+                        break;
 
-                    } else {
-                        auto data = j["data"];
-
+                    case RT_CANVAS_SIZE:
                         // Resize screen request
-                        if (requestType == RT_CANVAS_SIZE && data.contains("width") && data.contains("height")) {
+                        if (data.contains("width") && data.contains("height")) {
                             vc_video_engine->set_size((uint32_t) data["width"], (uint32_t) data["height"]);
                         }
+                        break;
 
+                    case RT_CLIENT_EVENT:
                         // User input request
-                        else if (requestType == RT_CLIENT_EVENT && j.contains("client_event")) {
+                        if (j.contains("client_event")) {
                             auto event_name = (std::string) j["client_event"];
                             auto event_type = resolveClientEvent(event_name);
                             if (event_type == EV_UNDEFINED) {
                                 // Unresolvable client event type error
                                 std::cerr << "Unrecognized client event \"" << event_name << "\"" << std::endl;
-
                             } else {
                                 // Call function to interpret user's inputs
                                 handle_input(event_type, j["client_event_mods"], data);
                             }
                         }
-                    }
+                        break;
+
+                    default:
+                    case RT_UNDEFINED:
+                        // Unresolvable request type error
+                        std::cerr << "Unrecognized request type : " << j["request"] << std::endl;
+                        break;
+                }
+
             } else {
                 std::cerr << "Received malformed message from web client :\n\t" << j << std::endl;
-
             }
 
             // create transform of the scene to pass to the engine for further frames redraw

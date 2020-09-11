@@ -24,8 +24,9 @@ const int DEFAULT_TIB = 1117584000;
  */
 enum RequestType {
     RT_UNDEFINED,
-    RT_CANVAS_SIZE, // request to resize the rendered frame
+    RT_CANVAS_SIZE,  // request to resize the rendered frame
     RT_CLIENT_EVENT, // request to handle a user input (keyboard / mouse)
+    RT_SET_VIEW,     // request to manually set up the view point
 };
 
 /**

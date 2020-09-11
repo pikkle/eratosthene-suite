@@ -17,7 +17,19 @@
             margin-bottom: 10px;
         }
 
-        #info_div span {
+        #info_div {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+        }
+
+        #info_div div {
+            margin-left: 20px;
+            margin-right: 20px;
+            align-items: center;
+        }
+
+        #info_div div span {
             margin-left: 10px;
             margin-right: 10px;
         }
@@ -32,16 +44,21 @@
         <button id="connect_button" onclick="connect()">Connect</button>
     </div>
     <div id="info_div">
-        <span>LAT : <span id="data_lat">0</span></span>
-        <span>LON : <span id="data_lon">0</span></span>
-        <span>ALT : <span id="data_alt">0</span></span>
-        <br/>
-        <span>TIA : <span id="data_tia">0</span></span>
-        <span>TIB : <span id="data_tib">0</span></span>
-        <br/>
-        <span>AZM : <span id="data_azm">0</span></span>
-        <span>GAM : <span id="data_gam">0</span></span>
-        <span>SPN : <span id="data_spn">0</span></span>
+        <div>
+            <button id="reset_button">Reset</button>
+        </div>
+        <div>
+            <span>LAT : <span id="data_lat">0</span></span>
+            <span>LON : <span id="data_lon">0</span></span>
+            <span>ALT : <span id="data_alt">0</span></span>
+            <br/>
+            <span>TIA : <span id="data_tia">0</span></span>
+            <span>TIB : <span id="data_tib">0</span></span>
+            <br/>
+            <span>AZM : <span id="data_azm">0</span></span>
+            <span>GAM : <span id="data_gam">0</span></span>
+            <span>SPN : <span id="data_spn">0</span></span>
+        </div>
     </div>
     <div id="canvas_container">
         <canvas id="canvas_stream"></canvas>
